@@ -238,11 +238,14 @@
           <div class="section-title" style="margin-top:14px">Lignes du site (${lines.length})</div>
           <div class="tbl-wrap"><table class="tbl">
             <thead><tr><th>N°</th><th>Type</th><th class="num">Abo net cumulé</th><th class="num">Appels</th></tr></thead>
-            <tbody>${lines.map(l => `<tr>
+            <tbody>${lines.map(l => {
+              // sur la période affichée, comme le reste de la fiche
+              const p = S.linePeriod(l, months);
+              return `<tr>
               <td class="mono">${F.esc(l.number)}</td>
               <td><span class="badge ${FAM_BADGE[l.family] || 'b-mut'}">${FAM_LABELS[l.family] || l.family}</span></td>
-              <td class="num">${F.eur(l.totals.abo)}</td>
-              <td class="num">${F.num(l.totals.calls)}</td></tr>`).join('')}
+              <td class="num">${F.eur(p.net)}</td>
+              <td class="num">${F.num(p.calls)}</td></tr>`; }).join('')}
             </tbody></table></div>`
         : ''}
         <button class="btn btn-ghost btn-sm mt-2" style="margin-top:12px" data-site-toggle="${s.id}">

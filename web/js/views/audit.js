@@ -90,7 +90,7 @@
     return `
       <div class="card">
         <div class="card-title">Couverture des remises par type de ligne
-          <span class="hint">part du brut effacée par les remises marché</span></div>
+          <span class="hint">part du brut effacée par les remises marché · période retenue</span></div>
         ${fams.map(f => `
           <div class="gauge-row">
             <div class="gauge-head">
@@ -192,7 +192,7 @@
       <div class="card mb-3">
         <div class="card-title">
           <span style="color:var(--red)">${Icons.svg('alert')} Lignes moins remisées que leurs jumelles</span>
-          <span class="hint">${outliers.length} ligne(s) · ${F.eur(total)} sur la période</span>
+          <span class="hint">${outliers.length} ligne(s) · ${F.eur(total)} toutes factures confondues</span>
         </div>
         <div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>N° de ligne</th><th>Site</th><th>Offre</th>
@@ -243,7 +243,7 @@
       <div class="card">
         <div class="card-title">
           <span>Régularisations facturées</span>
-          <span class="hint">${regs.length} libellé(s) · solde net ${net >= 0 ? '+' : ''}${F.eur(net)} sur la période</span>
+          <span class="hint">${regs.length} libellé(s) · solde net ${net >= 0 ? '+' : ''}${F.eur(net)} toutes factures confondues</span>
         </div>
         <div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Libellé</th><th class="num">Lignes touchées</th><th class="num">Montant cumulé</th></tr></thead>

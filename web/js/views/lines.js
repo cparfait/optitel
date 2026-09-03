@@ -92,7 +92,7 @@
     return '<span class="text-muted">—</span>';
   }
 
-  function filtered(lines) {
+  function filtered(lines, per) {
     const mk = S.month;
     const dormantKeys = state.status === 'dormant'
       ? new Set(S.linesDormant().map(l => l.key)) : null;
@@ -132,9 +132,9 @@
       // Trier sur la valeur affichée : les colonnes montrent des moyennes
       // mensuelles, trier sur le cumul mettrait une ligne présente 13 mois
       // au-dessus d'une ligne plus chère mais résiliée au bout de trois.
-      if (key === 'calls') { va = a.totals.calls; vb = b.totals.calls; }
-      else if (key === 'conso') { va = a.totals.avgConso; vb = b.totals.avgConso; }
-      else { va = a.totals.avgAbo; vb = b.totals.avgAbo; }
+      if (key === 'calls') { va = per[a.key].calls; vb = per[b.key].calls; }
+      else if (key === 'conso') { va = per[a.key].avgConso; vb = per[b.key].avgConso; }
+      else { va = per[a.key].avgNet; vb = per[b.key].avgNet; }
       return (va - vb) * state.dir;
     });
     return out;
@@ -144,7 +144,12 @@
     // cette vue a son propre sélecteur de parc : elle part du jeu complet
     const lines = S.allLines();
     const months = S.visibleMonths();
-    const rows = filtered(lines);
+    // Abo, conso et appels sur les mois visibles : les colonnes suivaient
+    // jusqu'ici les totaux figés du parseur, si bien qu'une ligne sans un appel
+    // depuis avril affichait encore ses 173 appels de l'automne — et que le
+    // sparkline, lui, se rétrécissait avec la période.
+    const per = S.linePeriods(lines, months);
+    const rows = filtered(lines, per);
     // les compteurs par type doivent refléter le parc choisi, pas tout l'historique
     const scope = lines.filter(l =>
       state.life === 'all' ||
@@ -161,7 +166,7 @@
     const sdaRows = S.sdaTotal(rows);
     const sdaHosts = S.linesWithSda(rows).length;
     const sdaScope = S.sdaTotal(scope);
-    const netTotal = rows.reduce((a, l) => a + l.totals.abo, 0);
+    const netTotal = rows.reduce((a, l) => a + per[l.key].net, 0);
     // le coût qui compte pour un arbitrage est celui encore facturé aujourd'hui
     const monthlyNow = rows.reduce((a, l) => a + (l.isActive ? l.lastNet : 0), 0);
 
@@ -233,9 +238,12 @@
                 <th class="sortable" data-k="family">Type <span class="arr"></span></th>
                 <th class="sortable" data-k="site">Site <span class="arr"></span></th>
                 <th>Rattachement</th>
-                <th class="num sortable" data-k="net">Abo net / mois <span class="arr"></span></th>
-                <th class="num sortable" data-k="conso">Conso / mois <span class="arr"></span></th>
-                <th class="num sortable" data-k="calls">Appels <span class="arr"></span></th>
+                <th class="num sortable" data-k="net"
+                  title="Moyenne par mois facturé, sur les ${months.length} mois de la période retenue">Abo net / mois <span class="arr"></span></th>
+                <th class="num sortable" data-k="conso"
+                  title="Moyenne par mois facturé, sur les ${months.length} mois de la période retenue">Conso / mois <span class="arr"></span></th>
+                <th class="num sortable" data-k="calls"
+                  title="Appels cumulés sur les ${months.length} mois de la période retenue">Appels <span class="arr"></span></th>
                 <th>Tendance abo</th>
                 <th>Statut</th>
               </tr></thead>
@@ -248,9 +256,12 @@
     const body = document.getElementById('lbody');
     body.innerHTML = rows.map(l => {
       const spark = C.sparkline(months.map(m => l.months[m]?.net || 0), famColor(l.family));
-      const avgAbo = l.totals.avgAbo, avgConso = l.totals.avgConso;
-      // un accès internet qui consomme sort du forfait : on le signale d'emblée
-      const netAnomaly = l.family === 'internet' && (l.totals.conso > 0.005 || l.totals.calls > 0);
+      const p = per[l.key];
+      const avgAbo = p.avgNet, avgConso = p.avgConso;
+      // un accès internet qui consomme sort du forfait : on le signale d'emblée.
+      // Mesuré sur la période, comme le filtre « accès internet avec
+      // consommation » : les deux se contredisaient dès qu'on filtrait.
+      const netAnomaly = l.family === 'internet' && (p.conso > 0.005 || p.calls > 0);
       return `<tr class="clickable${netAnomaly ? ' row-flag' : ''}" data-key="${l.key}">
         <td class="mono strong">${F.esc(l.number)}</td>
         <td>${famBadge(l.family)}${l.family === 'internet' && l.accessTech
@@ -261,7 +272,7 @@
         <td>${attachCell(l)}</td>
         <td class="num strong">${F.eur(avgAbo)}</td>
         <td class="num ${avgConso > 0 ? '' : 'text-muted'}">${F.eur(avgConso)}${netAnomaly ? ` <span class="flag-dot" title="Consommation sur un accès internet — à vérifier">${Icons.svg('alert')}</span>` : ''}</td>
-        <td class="num ${l.totals.calls > 0 ? '' : 'text-muted'}">${F.num(l.totals.calls)}</td>
+        <td class="num ${p.calls > 0 ? '' : 'text-muted'}">${F.num(p.calls)}</td>
         <td>${spark}</td>
         <td>${lineStatus(l)}</td>
       </tr>`;
@@ -355,16 +366,18 @@
         <dt>Sous-compte</dt><dd class="mono">${F.esc(l.siteId)}</dd>
         <dt>Compte de facturation</dt><dd class="mono">${F.esc(l.account)}</dd>
         <dt>Présence</dt><dd>${F.monthLabelShort(l.first)} → ${F.monthLabelShort(l.last)}</dd>
-        <dt>Abo net total</dt><dd>${F.eur(l.totals.abo)}</dd>
-        <dt>Conso totale</dt><dd>${F.eur(l.totals.conso)}</dd>
-        <dt>Appels cumulés</dt><dd>${F.num(totalCalls)} (${consoMonths} mois actifs)</dd>
+        <dt title="Toutes factures connues, indépendamment de la période filtrée">Abo net total</dt><dd>${F.eur(l.totals.abo)}</dd>
+        <dt title="Toutes factures connues, indépendamment de la période filtrée">Conso totale</dt><dd>${F.eur(l.totals.conso)}</dd>
+        <dt title="Toutes factures connues, indépendamment de la période filtrée">Appels cumulés</dt><dd>${F.num(totalCalls)} (${consoMonths} mois actifs)</dd>
         <dt>Mois sans conso</dt><dd>${l.monthsNoConso} / ${Object.keys(l.months).length}</dd>
       </div>
 
       <div class="section-title">Abonnement net par mois</div>
       <div class="month-strip" id="d-strip"></div>
 
-      <div class="section-title">Produits &amp; remises (cumul période)</div>
+      <!-- l.products n'est pas daté : ce cumul porte sur toutes les factures
+           connues de la ligne, pas sur la période filtrée. Le dire. -->
+      <div class="section-title">Produits &amp; remises (toutes factures)</div>
       <div id="d-prods">
         ${l.products.filter(p => Math.abs(p.total) > 0.005).map(p => `
           <div class="prod-row ${p.total < 0 ? 'is-remise' : ''}">

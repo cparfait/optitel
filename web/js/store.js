@@ -465,7 +465,12 @@
 
   /* Remise obtenue par ligne et par offre, à partir du rattachement de l'annexe.
      Permet de comparer une ligne à ses jumelles : deux lignes facturées pour la
-     même offre doivent recevoir la même remise. */
+     même offre doivent recevoir la même remise.
+
+     Porte sur toutes les factures connues de la ligne, quelle que soit la
+     période filtrée : `l.products` agrège les offres sans conserver le mois.
+     Les écrans qui s'en servent le disent — on ne peut pas le redater sans
+     changer le dataset produit par le parseur. */
   S.lineOfferRates = function (line) {
     const brut = {}, rem = {};
     (line.products || []).forEach(p => {
@@ -585,6 +590,46 @@
       })
       .filter(x => x.conso > 0.005 || x.calls > 0)
       .sort((a, b) => b.conso - a.conso);
+  };
+
+  /* ------------------------------------------------- agrégats par période
+     `l.totals` et `l.products` sont calculés par le parseur sur TOUS les mois du
+     dataset : ils ignorent le filtre de dates. Une ligne sans un appel depuis
+     avril affichait encore ses 173 appels de l'automne, et le taux de remise des
+     T0 annonçait 48,1 % « sur la période » là où la période filtrée donne 42,4 %.
+
+     Les montants et le trafic sont, eux, disponibles mois par mois dans
+     `l.months` : on les recompose ici sur les mois visibles. La ventilation par
+     offre (`l.products`) n'est pas datée — ce qui en dépend reste sur tout
+     l'historique, et le dit. */
+  S.linePeriod = function (l, months) {
+    const ms = months || S.visibleMonths();
+    const t = { n: 0, net: 0, brut: 0, remise: 0, conso: 0, calls: 0, monthsNoConso: 0 };
+    ms.forEach(m => {
+      const v = l.months[m];
+      if (!v) return;
+      t.n += 1;
+      t.net += v.net || 0;
+      t.brut += v.brut || 0;
+      t.remise += -(v.remise || 0);   // stocké négatif sur la facture
+      t.conso += v.conso || 0;
+      t.calls += v.calls || 0;
+      if ((v.calls || 0) === 0) t.monthsNoConso += 1;
+    });
+    t.avgNet = t.n ? t.net / t.n : 0;
+    t.avgConso = t.n ? t.conso / t.n : 0;
+    t.taux = t.brut > 0 ? (t.remise / t.brut) * 100 : 0;
+    return t;
+  };
+
+  /* Les mêmes agrégats pour un ensemble de lignes, indexés par clé de ligne :
+     une vue qui trie et affiche des dizaines de lignes ne doit pas recalculer
+     la même somme à chaque comparaison. */
+  S.linePeriods = function (lines, months) {
+    const ms = months || S.visibleMonths();
+    const out = {};
+    lines.forEach(l => { out[l.key] = S.linePeriod(l, ms); });
+    return out;
   };
 
   /* SDA portés par un ensemble de lignes.
@@ -727,13 +772,13 @@
      Audit — leviers d'économie et anomalies de facturation
      ═══════════════════════════════════════════════════════════════ */
 
-  /* Brut / remise / net cumulés d'une ligne sur la période visible. */
-  function lineMoney(l) {
-    let brut = 0, remise = 0;
-    (l.products || []).forEach(p => {
-      if (p.total > 0) brut += p.total; else remise += -p.total;
-    });
-    return { brut, remise, taux: brut > 0 ? (remise / brut) * 100 : 0 };
+  /* Brut / remise / taux d'une ligne sur la période visible.
+     Sommés sur `l.months`, et non sur `l.products` qui porte tout l'historique :
+     les jauges de l'audit annonçaient un taux et un brut de treize mois sous un
+     titre « sur la période ». */
+  function lineMoney(l, months) {
+    const t = S.linePeriod(l, months);
+    return { brut: t.brut, remise: t.remise, taux: t.taux };
   }
   S.lineMoney = lineMoney;
 
@@ -741,8 +786,9 @@
      On compare chaque ligne au meilleur taux constaté sur sa propre famille. */
   S.discountByFamily = function () {
     const agg = {};
+    const ms = S.visibleMonths();
     S.copperOrAllActive().forEach(l => {
-      const m = lineMoney(l);
+      const m = lineMoney(l, ms);
       if (m.brut <= 0) return;
       const e = agg[l.family] || (agg[l.family] = {
         family: l.family, label: l.familyLabel, brut: 0, remise: 0,
@@ -761,9 +807,10 @@
      obtient ailleurs : écart contractuel à faire corriger. */
   S.linesWithoutDiscount = function () {
     const best = {};
+    const ms = S.visibleMonths();
     S.discountByFamily().forEach(f => { best[f.family] = f.best; });
     return S.activeLines()
-      .map(l => ({ line: l, ...lineMoney(l) }))
+      .map(l => ({ line: l, ...lineMoney(l, ms) }))
       .filter(x => x.remise <= 0.005 && x.brut > 0 && (best[x.line.family] || 0) > 1)
       .map(x => ({
         ...x,
@@ -863,7 +910,10 @@
     return Object.values(events).sort((a, b) => b.delta - a.delta);
   };
 
-  /* Régularisations : normales à l'unité, suspectes si elles se répètent. */
+  /* Régularisations : normales à l'unité, suspectes si elles se répètent.
+     Lues sur `l.products`, donc sur toutes les factures de la ligne et non sur
+     la période filtrée — l'écran l'annonce ainsi. La version datée de ce constat
+     existe côté offres : `creditRows`, qui passe par les produits mensuels. */
   S.regularisations = function () {
     const map = {};
     S.allLines().forEach(l => {

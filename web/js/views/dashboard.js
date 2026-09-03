@@ -21,11 +21,14 @@
     const prev = months[months.length - 2];
     const T = S.periodTotals();
     const nMonths = months.length;
-    const linesAll = S.lines();
     // le parc historique reste la référence pour compter résiliations et rotation,
     // même quand le switch « Parc » restreint l'affichage aux lignes en service
     const linesEver = S.allLines();
     const alive = linesEver.filter(l => l.isActive);
+    // « vues sur la période » : les lignes facturées au moins un mois de la
+    // période retenue. Le compteur affichait tout l'historique — 168 lignes
+    // annoncées « sur la période » là où avril→août 2026 n'en voit que 153.
+    const seen = linesEver.filter(l => months.some(m => l.months[m]));
     // linesNoConso() porte sur le mois affiché : le coût et le libellé doivent
     // porter sur le même mois, sinon on chiffre un constat de février avec les
     // montants d'août dès que l'utilisateur change « Mois affiché ».
@@ -121,7 +124,7 @@
           ${kpi('Total période HT', F.eur(T.ht, 0), `<span>${nMonths} mois · moyenne ${F.eur(T.ht / nMonths)}/mois</span>`, 'euro', 'var(--accent)', 'var(--accent-soft)')}
           ${kpi('Facture du dernier mois', F.eur(tl.ht, 0), dHtHtml, 'invoice', 'var(--blue)', 'var(--blue-soft)')}
           ${kpi('Remises cumulées', F.eur(T.remiseAbo + T.remiseConso, 0), `<span class="up">${F.pct(remPct, 1)} du brut abonnements</span>`, 'percent', 'var(--teal)', 'var(--teal-soft)')}
-          ${kpi('Lignes en service', F.num(alive.length), `<span>${F.num(linesEver.length)} vues sur la période</span>`, 'phone', 'var(--violet)', 'var(--violet-soft)')}
+          ${kpi('Lignes en service', F.num(alive.length), `<span>${F.num(seen.length)} vues sur la période</span>`, 'phone', 'var(--violet)', 'var(--violet-soft)')}
           ${kpi('Cuivre à migrer', F.num(copperVoice), `<span class="down">${F.eur(copperCost)} /mois · ${copperSites} sites</span>`, 'swap', '#e05a1a', 'var(--accent-soft)')}
           ${kpi('Lignes voix dormantes', F.num(dormant.length), `<span class="down">${F.eur(dormantCost)} / mois · 0 appel sur ${nMonths} mois</span>`, 'phone-off', 'var(--amber)', 'var(--amber-soft)')}
         </div>

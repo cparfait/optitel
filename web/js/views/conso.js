@@ -66,9 +66,13 @@
 
     // top lignes consommatrices (période)
     // consommation déjà facturée : les lignes résiliées en font partie
-    const topLines = S.allLines().filter(l => l.totals.conso > 0)
-      .sort((a, b) => b.totals.conso - a.totals.conso).slice(0, 10);
-    const topMax = Math.max(...topLines.map(l => l.totals.conso), 1);
+    // conso des mois visibles, et non les totaux figés du parseur : le titre du
+    // bloc annonce « cumul période »
+    const perLine = S.linePeriods(S.allLines(), months);
+    const topLines = S.allLines().map(l => ({ line: l, conso: perLine[l.key].conso }))
+      .filter(x => x.conso > 0)
+      .sort((a, b) => b.conso - a.conso).slice(0, 10);
+    const topMax = Math.max(...topLines.map(x => x.conso), 1);
 
     // lignes sans conso au mois affiché
     const noConso = S.linesNoConso().slice().sort((a, b) => (b.months[S.month]?.net || 0) - (a.months[S.month]?.net || 0));
@@ -160,14 +164,14 @@
           </div>
           <div class="card">
             <div class="card-title">Top lignes consommatrices <span class="hint">cumul période</span></div>
-            ${topLines.map(l => `
+            ${topLines.map(({ line: l, conso }) => `
               <div class="hbar-row">
                 <div class="hbar-label" title="${F.esc(prettifySite(l))} — sous-compte ${F.esc(l.siteId)}">
                   <span class="mono" style="font-weight:600">${F.esc(l.number)}</span>
                   <span class="mono sub" style="margin-left:6px">${F.esc(l.siteId)}</span>
                   <div class="sub">${F.esc(prettifySite(l))}</div></div>
-                <div class="hbar-track"><div class="hbar-fill" style="width:${(l.totals.conso / topMax) * 100}%"></div></div>
-                <div class="hbar-val">${F.eur(l.totals.conso)}</div>
+                <div class="hbar-track"><div class="hbar-fill" style="width:${(conso / topMax) * 100}%"></div></div>
+                <div class="hbar-val">${F.eur(conso)}</div>
               </div>`).join('')}
           </div>
         </div>
@@ -185,7 +189,8 @@
                 <td><span class="badge b-mut">${l.familyLabel}</span></td>
                 <td>${F.esc(prettifySite(l))}<div class="sub mono">${F.esc(l.siteId)}</div></td>
                 <td class="num strong">${F.eur(l.months[S.month]?.net || 0)}</td>
-                <td class="num">${l.monthsNoConso} / ${Object.keys(l.months).length}</td>
+                <td class="num" title="Mois sans un appel, sur les mois de la période où la ligne est facturée">${
+                  perLine[l.key].monthsNoConso} / ${perLine[l.key].n}</td>
               </tr>`).join('')}
             </tbody>
           </table></div>

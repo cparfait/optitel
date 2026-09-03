@@ -32,6 +32,13 @@
     const months = S.visibleMonths();
     const copper = S.copperLines();
     const active = S.activeLines();
+    // Trafic sur les mois visibles. Le plan disait « aucun appel sur la période »
+    // en lisant les totaux du parseur, qui portent sur tout l'historique : trois
+    // lignes échappaient au constat et le KPI annonçait 27 lignes muettes
+    // là où la période filtrée en compte 30.
+    const per = S.linePeriods(S.allLines(), months);
+    const calls = l => (per[l.key] || { calls: 0 }).calls;
+    const conso = l => (per[l.key] || { conso: 0 }).conso;
     const monthlyCost = copper.reduce((a, l) => a + l.lastNet, 0);
 
     // Regroupement par site : c'est l'unité d'intervention réelle sur le terrain.
@@ -69,7 +76,7 @@
       // passe pas d'appels et une ligne d'ascenseur ne sonne qu'en cas de panne.
       // Les compter ici reviendrait à proposer de couper une téléalarme.
       s.silent = s.lines.filter(l =>
-        !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && l.totals.calls === 0);
+        !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && calls(l) === 0);
     });
     const silentLines = sites.reduce((a, s) => a + s.silent.length, 0);
     const silentCost = sites.reduce((a, s) =>
@@ -200,7 +207,7 @@
     /* Une ligne du plan : n°, technologie d'accès et trafic réellement observé. */
     const trafficCell = (l) => {
       if (l.family === 'internet') return '<span class="text-muted">accès data</span>';
-      if (l.totals.calls) return `${F.num(l.totals.calls)} appels · ${F.eur(l.totals.conso)}`;
+      if (calls(l)) return `${F.num(calls(l))} appels · ${F.eur(conso(l))}`;
       // une téléalarme d'ascenseur ne sonne qu'en cas de panne : son silence est
       // le fonctionnement attendu, pas un signal de résiliation
       if (S.NO_TRAFFIC_BY_DESIGN.has(l.family)) {
@@ -226,7 +233,7 @@
     };
 
     const lineRow = (l) => {
-      const mute = !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && l.totals.calls === 0;
+      const mute = !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && calls(l) === 0;
       const st = S.migrationOfLine(l);
       const cls = st.state === 'migrated' ? ' is-done'
         : st.state === 'kept' ? ' is-kept' : '';
@@ -248,8 +255,8 @@
       if (!supports.length) return '';
       return `<div class="cu-support">
         <div class="cu-support-head">${Icons.svg('link')} Ligne(s) support au même bâtiment</div>
-        ${supports.sort((a, b) => b.totals.calls - a.totals.calls).map(v => `
-          <div class="cu-line${v.totals.calls === 0 && !S.NO_TRAFFIC_BY_DESIGN.has(v.family) ? ' is-mute' : ''}">
+        ${supports.sort((a, b) => calls(b) - calls(a)).map(v => `
+          <div class="cu-line${calls(v) === 0 && !S.NO_TRAFFIC_BY_DESIGN.has(v.family) ? ' is-mute' : ''}">
             <span class="mono">${F.esc(v.number)}</span>
             <span class="sub">${F.esc(v.familyLabel)}${v.siteId !== net.siteId ? ` · sous-compte ${F.esc(v.siteId)}` : ''}</span>
             <span class="cu-line-conso">${trafficCell(v)}</span>
