@@ -8,11 +8,17 @@
 
   function render(view) {
     const months = S.visibleMonths();
+    // Les lignes du parc affiché, par site. Les badges de type se lisaient
+    // auparavant dans `s.families`, que le parseur fige sur tout l'historique :
+    // une fiche annonçait « Numéris ×1 · SDA ×2 · T0 ×1 » puis proposait « Voir
+    // la 1 ligne », les trois autres étant résiliées.
+    const linesBySite = {};
+    S.lines().forEach(l => { (linesBySite[l.siteId] = linesBySite[l.siteId] || []).push(l); });
     let sites = S.sites().map(s => {
       let abo = 0, conso = 0;
       months.forEach(m => { abo += s.months[m]?.abo || 0; conso += s.months[m]?.conso || 0; });
-      const nLines = S.lines().filter(l => l.siteId === s.id).length;
-      return { s, abo, conso, total: abo + conso, nLines };
+      const lines = linesBySite[s.id] || [];
+      return { s, abo, conso, total: abo + conso, nLines: lines.length, lines };
     });
     if (state.q) {
       const q = state.q.toLowerCase();
@@ -193,10 +199,16 @@
 
   function siteCard(x, months) {
     const s = x.s;
-    const fams = Object.entries(s.families || {}).filter(([k]) => k !== 'autre');
+    const lines = x.lines;
+    // comptés sur les lignes réellement listées en dessous
+    const famCount = {};
+    lines.forEach(l => {
+      const k = l.family || 'autre';
+      if (k !== 'autre') famCount[k] = (famCount[k] || 0) + 1;
+    });
+    const fams = Object.entries(famCount);
     const spark = C.sparkline(months.map(m => (s.months[m]?.abo || 0) + (s.months[m]?.conso || 0)), 'var(--accent)');
     const isOpen = state.open === s.id;
-    const lines = S.lines().filter(l => l.siteId === s.id);
     return `
       <div class="card" style="padding:16px 18px">
         <div class="flex-between" style="align-items:flex-start">
@@ -234,7 +246,8 @@
             </tbody></table></div>`
         : ''}
         <button class="btn btn-ghost btn-sm mt-2" style="margin-top:12px" data-site-toggle="${s.id}">
-          ${isOpen ? 'Masquer les lignes' : `Voir les ${x.nLines} ligne${x.nLines > 1 ? 's' : ''}`}
+          ${isOpen ? 'Masquer les lignes'
+            : x.nLines > 1 ? `Voir les ${x.nLines} lignes` : 'Voir la ligne'}
         </button>
       </div>`;
   }

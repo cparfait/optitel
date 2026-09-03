@@ -136,7 +136,8 @@
             <tbody>
               ${unapplied.map(o => `<tr class="row-flag">
                 <td class="strong">${F.esc(o.name)}</td>
-                <td class="num">${months.length}</td>
+                <td class="num" title="Mois où cette offre est facturée, sur les ${months.length} mois de la période">${o.months}${
+                  o.months < months.length ? `<span class="sub"> / ${months.length}</span>` : ''}</td>
                 <td class="num">${F.eur(o.brut)}</td>
                 <td class="num">${F.pct(o.nominal, 1)}</td>
                 <td class="num ${o.taux < 1 ? 'text-red strong' : ''}">${F.pct(o.taux, 1)}</td>
@@ -147,8 +148,10 @@
           <div class="audit-note" style="background:var(--red-soft);color:#8a2c15">
             ${Icons.svg('alert')}
             <div>Le taux n'est pas déduit : il est <b>écrit dans le libellé du produit facturé</b>,
-            et la facture ne porte aucune ligne de remise en regard. L'offre est facturée au tarif
-            plein tous les mois de la période. C'est le constat le plus direct de cet écran —
+            et la facture ne porte aucune ligne de remise en regard. ${unapplied.every(o => o.months >= months.length)
+              ? 'L\'offre est facturée au tarif plein tous les mois de la période.'
+              : 'L\'offre est facturée au tarif plein sur chacun des mois où elle apparaît.'}
+            C'est le constat le plus direct de cet écran —
             à réclamer avec les factures à l'appui.</div>
           </div>
         </div>` : ''}

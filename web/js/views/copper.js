@@ -171,7 +171,7 @@
             <span class="hint">priorisé par coût — un accès internet sur place permet de basculer en VoIP sans attendre</span></div>
           <div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
             <span class="chip on" data-copper-tab="all">Tous les sites (${sites.length})</span>
-            <span class="chip" data-copper-tab="open">Reste à faire</span>
+            <span class="chip" data-copper-tab="open">Reste à faire (${sites.filter(s => s.openLines > 0).length})</span>
             <span class="chip" data-copper-tab="silent">Avec ligne sans appel (${sites.filter(s => s.silent.length).length})</span>
             <select id="cu-state-filter" class="mini-select" style="margin-left:auto">
               <option value="">Tous les statuts</option>

@@ -41,13 +41,23 @@
   /* Le filtre de type porte sur toute la comparaison — mouvements ET parc :
      restreindre les seules listes laisserait les compteurs de parc annoncer un
      effectif que le tableau en dessous ne montre pas. */
+  /* Deux effectifs par type, et ils ne disent pas la même chose : les
+     mouvements (ce que les tableaux montrent) et le parc concerné (ce sur quoi
+     portent les compteurs de parc). Le chip affiche les mouvements — il
+     annonçait « T0 ascenseur 7 » alors qu'aucune de ces sept lignes n'avait
+     bougé, et on cliquait pour tomber sur deux tableaux vides. */
   function famCounts(cmp) {
     const counts = {};
-    [cmp.gone, cmp.added, cmp.kept].forEach(rows => rows.forEach(x => {
+    const get = (x) => {
       const f = x.line.family || 'autre';
-      const e = counts[f] || (counts[f] = { fam: f, label: x.line.familyLabel || f, n: 0 });
-      e.n += 1;
+      return counts[f] || (counts[f] = {
+        fam: f, label: x.line.familyLabel || f, mv: 0, parc: 0,
+      });
+    };
+    [cmp.gone, cmp.added].forEach(rows => rows.forEach(x => {
+      const e = get(x); e.mv += 1; e.parc += 1;
     }));
+    cmp.kept.forEach(x => { get(x).parc += 1; });
     return counts;
   }
 
@@ -97,7 +107,8 @@
     // un type disparu de la comparaison ne doit pas rester coché en silence
     state.fams.forEach(f => { if (!counts[f]) state.fams.delete(f); });
     const { gone, added, kept } = restrict(all);
-    const total = Object.values(counts).reduce((a, e) => a + e.n, 0);
+    const totalMv = all.gone.length + all.added.length;
+    const totalParc = totalMv + all.kept.length;
     const famChips = FAM_ORDER.filter(f => counts[f])
       .concat(Object.keys(counts).filter(f => !FAM_ORDER.includes(f)));
     // les effectifs de parc suivent le filtre : le dire, sinon on croit lire
@@ -132,10 +143,14 @@
           </div>
           <div class="chip-row mt-2" id="mv-fams">
             <span class="chip ${state.fams.size === 0 ? 'on' : ''}" data-fam=""
-              title="Lignes présentes à l'une des deux dates au moins"
-              >Tous les types <span class="cnt">${F.num(total)}</span></span>
-            ${famChips.map(f => `
-              <span class="chip ${state.fams.has(f) ? 'on' : ''}" data-fam="${f}">${F.esc(counts[f].label)} <span class="cnt">${F.num(counts[f].n)}</span></span>`).join('')}
+              title="${F.num(totalMv)} mouvement(s) · ${F.num(totalParc)} ligne(s) concernées au total"
+              >Tous les types <span class="cnt">${F.num(totalMv)}</span></span>
+            ${famChips.map(f => {
+              const c = counts[f];
+              return `<span class="chip ${c.mv ? '' : 'chip-quiet'} ${state.fams.has(f) ? 'on' : ''}" data-fam="${f}"
+                title="${c.mv ? `${F.num(c.mv)} mouvement(s)` : 'aucun mouvement entre ces deux mois'} · ${F.num(c.parc)} ligne(s) de ce type au parc"
+                >${F.esc(c.label)} <span class="cnt">${F.num(c.mv)}</span></span>`;
+            }).join('')}
           </div>
         </div>
 

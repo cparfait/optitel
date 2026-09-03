@@ -420,6 +420,10 @@
     const map = {};
     const get = (n) => map[n] || (map[n] = {
       name: n, brut: 0, marche: 0, compensation: 0, autre: 0, remise: 0, lines: 0,
+      // mois où l'offre est effectivement facturée : toutes ne le sont pas sur
+      // toute la période, et l'écran affichait la longueur de la période pour
+      // chacune d'elles
+      monthKeys: [],
     });
     S.visibleMonths().forEach(mk => {
       S.monthProducts(mk).forEach(p => {
@@ -430,13 +434,16 @@
           e[p.kind || 'autre'] += -p.montant;
           e.remise += -p.montant;
         } else {
-          get(p.name).brut += p.montant;
+          const e = get(p.name);
+          e.brut += p.montant;
+          if (!e.monthKeys.includes(mk)) e.monthKeys.push(mk);
         }
       });
     });
     return Object.values(map)
       .filter(e => e.brut > 0)
-      .map(e => ({ ...e, net: e.brut - e.remise, taux: (e.remise / e.brut) * 100 }))
+      .map(e => ({ ...e, months: e.monthKeys.length,
+        net: e.brut - e.remise, taux: (e.remise / e.brut) * 100 }))
       .sort((a, b) => b.brut - a.brut);
   };
 

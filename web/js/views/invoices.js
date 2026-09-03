@@ -173,18 +173,22 @@
       const grid = document.getElementById('cover-grid');
       const months = S.data.months;
       const foot = document.getElementById('cover-foot');
+      // Nombre de comptes du dataset, et non 3 écrits en dur : un quatrième
+      // compte importé faisait passer tous les mois en « 3/3 » puis en orange.
+      const full = (S.data.accounts || []).length || 1;
       grid.innerHTML = months.map(mk => {
         const accs = Object.keys(S.data.monthly[mk].accounts);
         const ok = accs.length;
-        return `<div title="${F.monthLabel(mk)} — ${ok} compte(s)" style="
+        const cls = ok >= full ? 'green' : ok > full / 2 ? 'amber' : 'red';
+        return `<div title="${F.monthLabel(mk)} — ${ok} compte(s) facturé(s) sur ${full}" style="
           border-radius:8px;padding:7px 6px;text-align:center;
-          background:${ok >= 3 ? 'var(--green-soft)' : ok >= 2 ? 'var(--amber-soft)' : 'var(--red-soft)'};
-          color:${ok >= 3 ? 'var(--green)' : ok >= 2 ? 'var(--amber)' : 'var(--red)'};
+          background:var(--${cls}-soft);color:var(--${cls});
           font-size:11px;font-weight:650">
-          ${F.monthLabelShort(mk)}<div style="font-size:9.5px;opacity:.75">${ok}/3 comptes</div>
+          ${F.monthLabelShort(mk)}<div style="font-size:9.5px;opacity:.75">${ok}/${full} comptes</div>
         </div>`;
       }).join('');
-      foot.innerHTML = `Vert = 3 comptes facturés · orange = 2 · rouge = 1 — <b>${S.data.meta.counts.invoices} factures</b> au total.`;
+      foot.innerHTML = `Vert = les ${full} comptes facturés · orange = majorité · rouge = moins de la moitié`
+        + ` — <b>${S.data.meta.counts.invoices} factures</b> au total.`;
     }
   }
 

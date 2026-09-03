@@ -351,6 +351,7 @@
     render() {
       const v = window.Views[this.route];
       if (!v) return;
+      this.syncNavCounts();
       document.getElementById('page-title').textContent = v.title || '';
       const ms = S.visibleMonths();
       const T = S.periodTotals();
@@ -409,6 +410,14 @@
       document.getElementById('dataset-meta').innerHTML =
         `Dataset généré le ${new Date(S.data.meta.generatedAt).toLocaleString('fr-FR')}<br>` +
         `${S.data.months.length} mois · Orange Business`;
+      this.syncNavCounts();
+    },
+
+    /* Pastilles du menu : elles portent sur le compte sélectionné, elles doivent
+       donc être recalculées à chaque filtre. Calculées une seule fois au
+       chargement, elles annonçaient encore « 101 lignes · 70 cuivre » — le parc
+       des trois comptes — alors que le compte 805326439 n'a qu'une ligne. */
+    syncNavCounts() {
       const badge = document.getElementById('nav-lines-count');
       if (badge) badge.textContent = S.activeLines().length || '';
       const cu = document.getElementById('nav-copper-count');
