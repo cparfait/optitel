@@ -4,7 +4,7 @@
   const FAM_LABELS = { t0: 'T0', t0_ascenseur: 'Ascenseur', numeris: 'Numéris', canal_sda: 'SDA', residentiel: 'Résid.', internet: 'Internet', autre: 'Autre' };
   const FAM_BADGE = { t0: 'b-t0', t0_ascenseur: 'b-asc', numeris: 'b-num', canal_sda: 'b-sda', residentiel: 'b-res', internet: 'b-web', autre: 'b-mut' };
 
-  const state = { q: '', open: null };
+  const state = { q: '', open: null, ambOpen: false };
 
   function render(view) {
     const months = S.visibleMonths();
@@ -60,6 +60,8 @@
       state.open = state.open === btn.dataset.siteToggle ? null : btn.dataset.siteToggle;
       render(view);
     }));
+    const ambBtn = document.getElementById('amb-toggle');
+    if (ambBtn) ambBtn.addEventListener('click', () => { state.ambOpen = !state.ambOpen; render(view); });
     document.querySelectorAll('[data-rename]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       const s = (S.data.sites || []).find(x => x.id === btn.dataset.rename);
@@ -130,27 +132,37 @@
     setTimeout(() => input.focus(), 30);
   }
 
-  /* Rappel des sites que la facture nomme de façon ambiguë. Tant qu'ils ne sont
-     pas renommés, une liste de migration ne dit pas de quel local elle parle. */
+  /* Rappel des sites que la facture nomme de façon ambiguë.
+
+     C'est un rappel, pas le contenu de la page : replié, il tient sur une ligne.
+     Déplié il occupait tout l'écran et repoussait les fiches de sites — avec
+     leurs lignes et leurs consommations — largement sous le pli. */
   function ambiguousCard() {
-    const amb = S.ambiguousSites().filter(s =>
-      S.account === 'all' || s.account === S.account);
-    if (!amb.length) return '';
-    const groups = {};
-    amb.forEach(s => (groups[s.name] = groups[s.name] || []).push(s));
+    const groups = S.ambiguousSiteGroups()
+      .map(g => ({ ...g, sites: g.sites.filter(s => S.account === 'all' || s.account === S.account) }))
+      .filter(g => g.sites.length > 1);
+    if (!groups.length) return '';
+    const n = groups.reduce((a, g) => a + g.sites.length, 0);
     return `
-      <div class="card mb-2" style="border-color:#f3ddb0;background:linear-gradient(100deg,rgba(217,140,13,.06),#fff 45%)">
-        <div class="card-title">
-          <span style="color:#8a5a06">${Icons.svg('alert')} Sites à renommer</span>
-          <span class="hint">${amb.length} sous-comptes · ${Object.keys(groups).length} noms portés par plusieurs bâtiments</span>
+      <div class="notice mb-2">
+        <span class="notice-ico">${Icons.svg('alert')}</span>
+        <div class="notice-body">
+          <b>${groups.length} nom${groups.length > 1 ? 's' : ''} de site</b>
+          port${groups.length > 1 ? 'és' : 'é'} par plusieurs bâtiments
+          — ${n} sous-comptes qu'on ne peut pas distinguer sur une liste.
         </div>
+        <button class="btn btn-ghost btn-sm" id="amb-toggle">
+          ${state.ambOpen ? 'Masquer' : 'Voir et renommer'}</button>
+      </div>
+      ${state.ambOpen ? `
+      <div class="card mb-2">
         <div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Nom sur la facture</th><th>Sous-compte</th><th>Adresse</th><th></th></tr></thead>
           <tbody>
-            ${Object.entries(groups).map(([name, ss]) => ss.map((s, i) => `
+            ${groups.map(g => g.sites.map((s, i) => `
               <tr>
-                <td>${i === 0 ? `<b>${F.esc(F.titleCase(name))}</b>
-                  <div class="sub">${ss.length} bâtiments</div>` : ''}</td>
+                <td>${i === 0 ? `<b>${F.esc(F.titleCase(g.name))}</b>
+                  <div class="sub">${g.sites.length} bâtiments</div>` : ''}</td>
                 <td class="mono sub">${F.esc(s.id)}</td>
                 <td>${F.esc(F.titleCase(s.address || ''))}</td>
                 <td style="width:120px"><button class="btn btn-ghost btn-sm"
@@ -160,11 +172,11 @@
         </table></div>
         <div class="audit-note">
           ${Icons.svg('info')}
-          <div>Le nom saisi ici ne remplace pas celui de la facture : il s'affiche à sa
+          <div>Le nom saisi ne remplace pas celui de la facture : il s'affiche à sa
           place dans l'application, et le nom facturé reste visible en dessous pour
           retrouver le sous-compte sur le PDF. Un site renommé sort de cette liste.</div>
         </div>
-      </div>`;
+      </div>` : ''}`;
   }
 
   /* Un même bâtiment porte souvent plusieurs sous-comptes facturés séparément :

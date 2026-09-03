@@ -200,6 +200,19 @@ select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px r
 }
 .icon-btn:hover { background: var(--bg); border-color: #c3c8d4; }
 
+/* Bandeau de rappel : une ligne, jamais plus. Il signale, il n'occupe pas
+   l'écran à la place du contenu de la page. */
+.notice {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 13px; border-radius: var(--r-md, 10px);
+  background: var(--amber-soft); border: 1px solid #f3ddb0;
+  color: #8a5a06; font-size: 12.5px;
+}
+.notice-ico { display: flex; flex: none; }
+.notice-ico svg { width: 15px; height: 15px; }
+.notice-body { flex: 1; min-width: 0; line-height: 1.45; }
+.notice .btn { flex: none; }
+
 /* Crayon de renommage : discret dans le titre de la carte, il n'apparaît
    franchement qu'au survol pour ne pas concurrencer le nom du site. */
 .site-rename {

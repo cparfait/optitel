@@ -234,7 +234,7 @@
      Les sous-comptes multiples d'un même bâtiment ne sont pas concernés : là,
      le nom identique est juste. On compare donc sur `placeKey`, qui normalise
      l'adresse, et non sur la chaîne brute. */
-  S.ambiguousSites = function () {
+  S.ambiguousSiteGroups = function () {
     const byName = {};
     (S.data.sites || []).forEach(s => {
       const n = (s.name || '').trim().toUpperCase();
@@ -242,15 +242,23 @@
       (byName[n] = byName[n] || []).push(s);
     });
     const out = [];
-    Object.values(byName).forEach(group => {
+    Object.entries(byName).forEach(([name, group]) => {
       const places = new Set(group.map(s => s.placeKey || s.address || s.id));
-      if (group.length > 1 && places.size > 1) out.push(...group);
+      if (group.length < 2 || places.size < 2) return;
+      // Un site renommé n'est plus ambigu : c'est le nom d'usage qui lève la
+      // confusion. On l'écarte APRÈS le regroupement — filtrer avant laissait
+      // des groupes réduits à un seul membre, affichés « 1 bâtiment » alors
+      // qu'un site seul ne se confond avec rien.
+      const reste = group.filter(s => !window.fmt.siteRenamed(s));
+      if (reste.length < 2) return;
+      out.push({ name, sites: reste.sort((a, b) => (a.address || '').localeCompare(b.address || '')) });
     });
-    // une fois renommé, le site sort de la liste : c'est le nom d'usage qui
-    // lève l'ambiguïté, pas celui de la facture
-    return out.filter(s => !window.fmt.siteRenamed(s))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '')
-        || (a.address || '').localeCompare(b.address || ''));
+    return out.sort((a, b) => b.sites.length - a.sites.length || a.name.localeCompare(b.name));
+  };
+
+  /* Liste à plat, pour compter. */
+  S.ambiguousSites = function () {
+    return S.ambiguousSiteGroups().reduce((a, g) => a.concat(g.sites), []);
   };
 
   /* Sites du compte courant, sans le filtre de parc global. */
