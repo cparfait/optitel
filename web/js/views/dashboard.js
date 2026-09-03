@@ -115,8 +115,12 @@
     const marchéChange = (S.data.accounts || []).some(a => a.marches && a.marches.length > 1);
     if (marchéChange) alerts.push({ ico: 'tag', color: 'var(--violet)', soft: 'var(--violet-soft)',
       html: `<b>Changement de marché</b> détecté pendant la période — comparez les niveaux de remises avant / après.` });
+    // certaines figurent encore sur la dernière facture, mais pour un simple
+    // avoir de prorata : elles sont parties en cours de mois
+    const nClosing = linesEver.filter(l => l.closingCredit).length;
     if (nDead) alerts.push({ ico: 'info', color: 'var(--blue)', soft: 'var(--blue-soft)',
-      html: `<b>${nDead} ligne${nDead > 1 ? 's' : ''} absente${nDead > 1 ? 's' : ''}</b> de la dernière facture (résiliation ou transfert).` });
+      html: `<b>${nDead} ligne${nDead > 1 ? 's' : ''} hors service</b> — absente${nDead > 1 ? 's' : ''} de la dernière facture (résiliation ou transfert)${
+        nClosing ? `, dont ${nClosing} soldée${nClosing > 1 ? 's' : ''} par un avoir de prorata sur la dernière facture` : ''}.` });
 
     view.innerHTML = `
       <div class="wrap">

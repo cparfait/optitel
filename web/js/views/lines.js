@@ -27,8 +27,15 @@
 
   function lineStatus(l) {
     if (l.isTerminated) {
-      return `<span class="row-status" title="Dernière facturation : ${F.monthLabel(l.endedAt)}">
-        <span class="dot dot-off"></span>résiliée ${F.monthLabelShort(l.endedAt)}</span>`;
+      // une ligne dont la dernière facture n'est qu'un avoir de prorata est
+      // résiliée dans ce mois-là : le dire, sinon on croit à une erreur de
+      // montant en voyant −2,82 € sur le détail mensuel
+      const t = l.closingCredit
+        ? `Résiliée en cours de mois : ${F.monthLabel(l.endedAt)} ne porte plus qu'un avoir de prorata de ${F.eur(l.months[l.endedAt].net)}. Dernier mois plein : ${F.monthLabel(l.lastPaid)}`
+        : `Dernière facturation : ${F.monthLabel(l.endedAt)}`;
+      return `<span class="row-status" title="${F.esc(t)}">
+        <span class="dot dot-off"></span>résiliée ${F.monthLabelShort(l.endedAt)}${
+          l.closingCredit ? ' <span class="sub">avoir de clôture</span>' : ''}</span>`;
     }
     const v = l.months[S.month];
     if (!v) return `<span class="row-status"><span class="dot dot-off"></span>absente ce mois</span>`;

@@ -496,6 +496,20 @@ def _csv(rows, filename):
         headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
 
+def in_service(l, month):
+    """La ligne est-elle facturée en service à ce mois-là ?
+
+    Une dernière facture négative ne porte que l'avoir de prorata de la
+    résiliation : la ligne est partie en cours de mois, elle n'est plus en
+    service. Même règle que le front (`closingCredit` dans store.js), sans quoi
+    les CSV décrivent un parc que les écrans ne montrent pas.
+    """
+    v = (l.get('months') or {}).get(month)
+    if not v:
+        return False
+    return not (month == l['last'] and (v.get('net') or 0) < 0)
+
+
 @app.get('/api/export/lines')
 def export_lines():
     if not dataset_exists():
@@ -777,7 +791,8 @@ def export_mouvements():
             continue
         if fams and l.get('family') not in fams:
             continue
-        a, b = l['months'].get(frm), l['months'].get(to)
+        a = l['months'].get(frm) if in_service(l, frm) else None
+        b = l['months'].get(to) if in_service(l, to) else None
         if bool(a) == bool(b):
             continue                      # inchangée : présente ou absente aux deux dates
         sortie = bool(a)
@@ -823,7 +838,9 @@ def export_migration():
     for l in ds['lines']:
         ref_month = last_by_account.get(l['account'])
         cur = l['months'].get(ref_month)
-        if not cur or not l.get('onCopper'):
+        # une ligne dont la dernière facture n'est qu'un avoir de clôture est
+        # déjà partie : elle n'a pas à figurer au plan de migration
+        if not cur or not l.get('onCopper') or not in_service(l, ref_month):
             continue
         # une saisie portée sur la ligne prime sur celle du site : c'est la plus
         # précise des deux, et c'est à ce niveau que la commande est passée

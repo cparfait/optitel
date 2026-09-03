@@ -24,11 +24,21 @@
     return { ms, from: from <= to ? from : to, to: from <= to ? to : from };
   }
 
+  /* Présence d'une ligne à un mois donné. Un dernier mois négatif ne porte que
+     l'avoir de prorata de la résiliation : la ligne est partie ce mois-là, la
+     compter présente la faisait passer pour un parc stable. */
+  function at(l, m) {
+    const v = l.months[m];
+    if (!v) return null;
+    if (m === l.last && (v.net || 0) < 0) return null;
+    return v;
+  }
+
   function compare(from, to) {
     const lines = S.allLines();
     const gone = [], added = [], kept = [];
     lines.forEach(l => {
-      const a = l.months[from], b = l.months[to];
+      const a = at(l, from), b = at(l, to);
       if (a && !b) gone.push({ line: l, net: a.net, at: a });
       else if (!a && b) added.push({ line: l, net: b.net, at: b });
       else if (a && b) kept.push({ line: l, from: a.net, to: b.net });
@@ -89,7 +99,10 @@
           <td><span class="badge b-mut">${F.esc(x.line.familyLabel)}</span></td>
           <td>${F.esc(F.site(x.line))}<div class="sub mono">${F.esc(x.line.siteId)}</div></td>
           <td class="num strong">${F.eur(x.net)}</td>
-          <td class="sub">${F.monthLabelShort(kind === 'gone' ? x.line.last : x.line.first)}</td>
+          <td class="sub"${kind === 'gone' && x.line.closingCredit
+            ? ` title="${F.monthLabel(x.line.last)} ne porte plus qu'un avoir de prorata de ${F.eur(x.line.months[x.line.last].net)} : la ligne est partie en cours de mois"` : ''}
+            >${F.monthLabelShort(kind === 'gone' ? x.line.lastPaid : x.line.first)}${
+              kind === 'gone' && x.line.closingCredit ? ' <span class="badge b-mut">avoir de clôture</span>' : ''}</td>
         </tr>`).join('')}
       </tbody>
     </table></div>`;

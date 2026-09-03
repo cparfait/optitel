@@ -78,7 +78,16 @@
     d.lines.forEach(l => {
       const ref = lastByAccount[l.account] || d.lastMonth;
       l.accountLastMonth = ref;
-      l.isActive = !!l.months[ref];
+      const at = l.months[ref];
+      /* Dernière facture négative : la ligne n'y figure plus que par l'avoir de
+         prorata de sa résiliation. Le 01 47 35 77 99 est facturé 29,08 € jusqu'en
+         juillet puis −2,82 € en août : la ligne est partie en cours de mois, elle
+         n'est pas en service. La compter dans le parc gonflait l'effectif et
+         laissait ces résiliations hors de la liste des lignes résiliées.
+         Aucun autre mois du dataset n'est négatif : le signe ne marque que la
+         clôture, jamais une régularisation en cours de vie. */
+      l.closingCredit = !!at && (at.net || 0) < 0;
+      l.isActive = !!at && !l.closingCredit;
       l.isTerminated = !l.isActive;
       l.endedAt = l.isTerminated ? l.last : null;
       // nombre de mois facturés depuis sa disparition
@@ -91,8 +100,15 @@
         ? !!l.onCopper : S.COPPER_FAMILIES.has(l.family);
       l.isCopperVoice = l.isCopper && l.family !== 'internet';
       l.isCopperData = l.isCopper && l.family === 'internet';
-      // dernier montant connu : ce que coûte encore la ligne, ou ce qu'elle coûtait
-      const ref2 = l.isActive ? ref : l.last;
+      // Dernier montant connu : ce que coûte encore la ligne, ou ce qu'elle
+      // coûtait. Pour une résiliation, le dernier mois facturé peut n'être qu'un
+      // avoir — on prend le dernier mois réellement payé, sinon la ligne
+      // apparaîtrait à −2,82 € et l'économie de sa résiliation serait négative.
+      const paid = Object.keys(l.months).filter(m => (l.months[m].net || 0) > 0).sort();
+      // dernier mois réellement payé — pour une résiliation, ce n'est pas
+      // toujours la dernière facture où la ligne apparaît
+      l.lastPaid = paid[paid.length - 1] || l.last;
+      const ref2 = l.isActive ? ref : l.lastPaid;
       l.lastNet = l.months[ref2] ? l.months[ref2].net : 0;
     });
   };
