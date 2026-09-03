@@ -133,6 +133,17 @@
     return S.allLines().filter(l => l.isActive && l.isCopper);
   };
 
+  /* Parc cuivre retenu à l'écran. Le switch « Parc » vaut ici comme partout :
+     « Actifs » montre ce qui reste à migrer, désactivé montre aussi le cuivre
+     déjà retiré sur la période — l'histoire du chantier. La pastille du menu et
+     l'écran passent par la même fonction, sinon l'un annonçait 66 et l'autre
+     137. */
+  S.copperScope = function () {
+    if (S.activeOnly) return S.copperLines();
+    const ms = S.visibleMonths();
+    return S.allLines().filter(l => l.isCopper && ms.some(m => l.months[m]));
+  };
+
   /* ---------------------------------------------- suivi de migration (saisie)
      Stocké côté serveur, hors dataset : un ré-import de factures reconstruit le
      dataset mais ne doit pas effacer l'avancement saisi. */

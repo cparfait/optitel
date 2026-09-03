@@ -404,24 +404,51 @@
 
     fillEntity() {
       document.getElementById('entity-name').textContent = 'Commune de Châtillon';
-      const n = S.data.meta.counts;
-      document.getElementById('entity-meta').innerHTML =
-        `${n.invoices} factures · ${n.lines} lignes<br>${n.sites} sites télécoms`;
-      document.getElementById('dataset-meta').innerHTML =
-        `Dataset généré le ${new Date(S.data.meta.generatedAt).toLocaleString('fr-FR')}<br>` +
-        `${S.data.months.length} mois · Orange Business`;
       this.syncNavCounts();
     },
 
-    /* Pastilles du menu : elles portent sur le compte sélectionné, elles doivent
-       donc être recalculées à chaque filtre. Calculées une seule fois au
-       chargement, elles annonçaient encore « 101 lignes · 70 cuivre » — le parc
-       des trois comptes — alors que le compte 805326439 n'a qu'une ligne. */
+    /* Compteurs de la coquille — pastilles du menu et encart de la barre
+       latérale. Tout ce qui est affiché ici décrit le périmètre retenu : ils
+       sont donc recalculés à chaque rendu, comme les écrans. Figés au
+       chargement, ils annonçaient encore « 78 factures · 168 lignes · 101 en
+       service » quel que soit le compte, la période ou le switch « Parc ». */
     syncNavCounts() {
+      const ms = S.visibleMonths();
+      const all = S.data.meta.counts;
+      const invoices = (S.data.invoices || []).filter(i =>
+        (S.account === 'all' || i.compte === S.account) && ms.includes(i.month));
+      const meta = document.getElementById('entity-meta');
+      if (meta) {
+        meta.innerHTML = `${invoices.length} factures · ${S.lines().length} lignes`
+          + `<br>${S.sites().length} sites télécoms`;
+        meta.title = `Périmètre retenu. Sur l'ensemble du dataset : `
+          + `${all.invoices} factures · ${all.lines} lignes · ${all.sites} sites`;
+      }
+      const ds = document.getElementById('dataset-meta');
+      if (ds) {
+        const total = S.data.months.length;
+        ds.innerHTML = `Dataset généré le ${new Date(S.data.meta.generatedAt).toLocaleString('fr-FR')}<br>`
+          + `${ms.length < total ? `${ms.length} mois retenus sur ${total}` : `${total} mois`}`
+          + ` · Orange Business`;
+      }
       const badge = document.getElementById('nav-lines-count');
-      if (badge) badge.textContent = S.activeLines().length || '';
+      if (badge) {
+        // `S.lines()` suit le switch « Parc » : c'est exactement ce que la vue
+        // Lignes affiche. La pastille comptait les seules lignes en service, si
+        // bien que désactiver « Actifs » ouvrait 168 lignes sous un badge 97.
+        badge.textContent = S.lines().length || '';
+        badge.title = S.activeOnly
+          ? 'Lignes en service sur la dernière facture de leur compte'
+          : 'Tout l\'historique du compte, lignes résiliées comprises';
+      }
       const cu = document.getElementById('nav-copper-count');
-      if (cu) cu.textContent = S.copperLines().length || '';
+      if (cu) {
+        // même périmètre que l'écran « Fin du cuivre », switch compris
+        cu.textContent = S.copperScope().length || '';
+        cu.title = S.activeOnly
+          ? 'Lignes cuivre encore en service — à migrer avant la fermeture du RTC'
+          : 'Tout le cuivre vu sur la période, lignes déjà retirées comprises';
+      }
     },
   };
 

@@ -30,7 +30,17 @@
 
   function render(view) {
     const months = S.visibleMonths();
-    const copper = S.copperLines();
+    /* Le switch « Parc » vaut ici comme partout : « Actifs » montre ce qui reste
+       à migrer, désactivé montre aussi le cuivre déjà retiré sur la période —
+       c'est l'histoire du chantier. Les deux ne se mélangent pas dans les
+       chiffres : une ligne partie ne coûte plus rien et n'a plus à être migrée,
+       les compteurs de coût et d'avancement restent donc sur le parc en service
+       et le disent. */
+    const live = S.copperLines();
+    const everCopper = S.allLines().filter(l =>
+      l.isCopper && months.some(m => l.months[m]));
+    const copper = S.copperScope();
+    const gone = copper.filter(l => !l.isActive);
     const active = S.activeLines();
     // Trafic sur les mois visibles. Le plan disait « aucun appel sur la période »
     // en lisant les totaux du parseur, qui portent sur tout l'historique : trois
@@ -39,7 +49,12 @@
     const per = S.linePeriods(S.allLines(), months);
     const calls = l => (per[l.key] || { calls: 0 }).calls;
     const conso = l => (per[l.key] || { conso: 0 }).conso;
-    const monthlyCost = copper.reduce((a, l) => a + l.lastNet, 0);
+    // ce que le cuivre coûte encore : les lignes déjà parties n'en font pas
+    // partie, quel que soit le switch
+    const monthlyCost = live.reduce((a, l) => a + l.lastNet, 0);
+    // ce que les résiliations de la période ont déjà retiré de la facture,
+    // valorisé à leur dernier mois plein
+    const goneCost = gone.reduce((a, l) => a + l.lastNet, 0);
 
     // Regroupement par site : c'est l'unité d'intervention réelle sur le terrain.
     // index des accès internet par numéro, pour connaître la techno du porteur
@@ -54,7 +69,9 @@
         placeKey: l.placeKey, lines: [], cost: 0, internet: null, maxEffort: 0,
       });
       s.lines.push(l);
-      s.cost += l.lastNet;
+      // le coût d'un site est ce qu'il coûte encore : une ligne retirée est
+      // listée pour mémoire, elle ne pèse plus sur le montant
+      if (l.isActive) s.cost += l.lastNet; else s.goneCost = (s.goneCost || 0) + l.lastNet;
       if (l.siteInternet) s.internet = l.siteInternet;
       // un accès xDSL du site est lui-même à migrer : il porte la techno du site
       if (l.family === 'internet') s.internet = s.internet || l.number;
@@ -64,18 +81,23 @@
     sites.forEach(s => {
       s.suivi = S.migrationOf(s.id);
       s.net = s.internet ? netByNumber[s.internet] : null;
-      s.lines.sort((a, b) => b.lastNet - a.lastNet);
+      // les lignes encore en service d'abord, puis celles déjà retirées
+      s.lines.sort((a, b) => (b.isActive ? 1 : 0) - (a.isActive ? 1 : 0)
+        || b.lastNet - a.lastNet);
+      s.liveLines = s.lines.filter(l => l.isActive);
+      s.goneLines = s.lines.filter(l => !l.isActive);
       // Le suivi se tient ligne par ligne : sur un site mixte, le T0 bascule en
       // VoIP pendant que l'ascenseur attend son ascensoriste. L'état du site est
-      // donc déduit de ses lignes, et non l'inverse.
-      s.lineStates = s.lines.map(l => S.migrationOfLine(l));
+      // donc déduit de ses lignes, et non l'inverse. Une ligne déjà résiliée
+      // n'attend rien : elle ne compte ni comme reste à faire ni comme migrée.
+      s.lineStates = s.liveLines.map(l => S.migrationOfLine(l));
       s.doneLines = s.lineStates.filter(x => x.state === 'migrated').length;
       s.openLines = s.lineStates.filter(x => !['migrated', 'kept'].includes(x.state)).length;
       // Une ligne cuivre sans le moindre appel se résilie au lieu de se migrer —
       // sauf celles dont l'absence de trafic est normale : un accès internet ne
       // passe pas d'appels et une ligne d'ascenseur ne sonne qu'en cas de panne.
       // Les compter ici reviendrait à proposer de couper une téléalarme.
-      s.silent = s.lines.filter(l =>
+      s.silent = s.liveLines.filter(l =>
         !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && calls(l) === 0);
     });
     const silentLines = sites.reduce((a, s) => a + s.silent.length, 0);
@@ -84,26 +106,29 @@
 
     // Avancement déclaré, compté en lignes : c'est l'unité de commande, et un
     // site à moitié migré ne devait pas compter pour zéro comme auparavant.
-    const lineStates = copper.map(l => ({ line: l, st: S.migrationOfLine(l) }));
+    // Porte sur le parc en service : l'avancement mesure ce qu'il reste à faire,
+    // et une ligne déjà résiliée n'est pas une migration déclarée.
+    const lineStates = live.map(l => ({ line: l, st: S.migrationOfLine(l) }));
     const byState = st => lineStates.filter(x => x.st.state === st);
     const doneLines = byState('migrated');
     const engagedLines = lineStates.filter(x => ['study', 'ordered'].includes(x.st.state));
     const doneCost = doneLines.reduce((a, x) => a + x.line.lastNet, 0);
-    const progress = copper.length ? (doneLines.length / copper.length) * 100 : 0;
+    const progress = live.length ? (doneLines.length / live.length) * 100 : 0;
     // un site est traité quand toutes ses lignes le sont
     const done = sites.filter(s => s.openLines === 0);
 
-    // répartition par technologie
+    // répartition par technologie : effectif du parc retenu, coût de ce qui est
+    // encore facturé
     const byFam = {};
     copper.forEach(l => {
-      const e = byFam[l.family] || (byFam[l.family] = { n: 0, cost: 0 });
-      e.n += 1; e.cost += l.lastNet;
+      const e = byFam[l.family] || (byFam[l.family] = { n: 0, gone: 0, cost: 0 });
+      e.n += 1;
+      if (l.isActive) e.cost += l.lastNet; else e.gone += 1;
     });
 
     // Trajectoire : c'est une histoire, pas un état. Elle doit compter les lignes
     // facturées chaque mois, y compris celles depuis résiliées — sinon la courbe
     // est plate et le chantier paraît à l'arrêt.
-    const everCopper = S.allLines().filter(l => l.isCopper);
     const trend = months.map(m => everCopper.filter(l => l.months[m]).length);
     const startCount = trend[0] || 0;
     const removed = startCount - (trend[trend.length - 1] || 0);
@@ -111,20 +136,27 @@
     view.innerHTML = `
       <div class="wrap">
         <div class="kpi-row mb-3">
-          ${kpi('Lignes cuivre en service', F.num(copper.length),
-            `<span>${F.num(copper.filter(l => l.family !== 'internet').length)} voix RTC · ${F.num(copper.filter(l => l.family === 'internet').length)} accès xDSL</span>`,
+          ${kpi(S.activeOnly ? 'Lignes cuivre en service' : 'Lignes cuivre vues sur la période',
+            F.num(copper.length),
+            S.activeOnly
+              ? `<span>${F.num(copper.filter(l => l.family !== 'internet').length)} voix RTC · ${F.num(copper.filter(l => l.family === 'internet').length)} accès xDSL</span>`
+              : `<span>${F.num(live.length)} encore en service · ${F.num(gone.length)} déjà retirée(s)</span>`,
             'phone', 'var(--accent)', 'var(--accent-soft)')}
-          ${kpi('Coût du parc cuivre', F.eur(monthlyCost, 0) + ' <span style="font-size:13px;font-weight:500">/mois</span>',
+          ${kpi(S.activeOnly ? 'Coût du parc cuivre' : 'Coût du cuivre encore en service',
+            F.eur(monthlyCost, 0) + ' <span style="font-size:13px;font-weight:500">/mois</span>',
             `<span>${F.eur(monthlyCost * 12, 0)} par an</span>`,
             'euro', 'var(--blue)', 'var(--blue-soft)')}
-          ${kpi('Sites à traiter', F.num(sites.length),
-            `<span>${F.num(copper.length)} ligne(s) réparties</span>`,
+          ${!S.activeOnly ? kpi('Cuivre déjà retiré', F.num(gone.length),
+            `<span class="up">${F.eur(goneCost)} /mois de moins · ${F.eur(goneCost * 12, 0)}/an</span>`,
+            'phone-off', 'var(--green)', 'var(--green-soft)') : ''}
+          ${kpi('Sites à traiter', F.num(sites.filter(s => s.liveLines.length).length),
+            `<span>${F.num(live.length)} ligne(s) réparties</span>`,
             'building', 'var(--violet)', 'var(--violet-soft)')}
           ${kpi('Lignes sans aucun appel', F.num(silentLines),
             `<span class="up">${F.eur(silentCost)} /mois · à résilier plutôt qu'à migrer</span>`,
             'phone-off', 'var(--teal)', 'var(--teal-soft)')}
           ${kpi('Migration déclarée', F.pct(progress),
-            `<span>${doneLines.length}/${copper.length} lignes · ${engagedLines.length} en cours · ${done.length}/${sites.length} sites soldés</span>`,
+            `<span>${doneLines.length}/${live.length} lignes en service · ${engagedLines.length} en cours · ${done.length}/${sites.length} sites soldés</span>`,
             'check-c', 'var(--green)', 'var(--green-soft)')}
         </div>
 
@@ -165,7 +197,8 @@
                     <td><span class="badge ${EFFORT_CLASS[m.effort]}">${EFFORT_LABEL[m.effort]}</span>
                       <div style="margin-top:3px">${F.esc(m.label)}</div></td>
                     <td class="sub">${F.esc(m.target)}</td>
-                    <td class="num strong">${e.n}</td>
+                    <td class="num strong">${e.n}${e.gone
+                      ? `<div class="sub">dont ${e.gone} retirée${e.gone > 1 ? 's' : ''}</div>` : ''}</td>
                     <td class="num">${F.eur(e.cost)}</td></tr>`;
                 }).join('')}
               </tbody>
@@ -237,6 +270,19 @@
       const st = S.migrationOfLine(l);
       const cls = st.state === 'migrated' ? ' is-done'
         : st.state === 'kept' ? ' is-kept' : '';
+      /* Ligne déjà partie : elle est là pour mémoire, quand le switch « Parc »
+         montre l'historique. Rien à déclarer, et son montant est celui qu'elle
+         coûtait — d'où le « /mois évités » plutôt qu'un coût courant. */
+      if (!l.isActive) {
+        return `<div class="cu-line is-done">
+          <span class="mono strong">${F.esc(l.number)}</span>
+          <span class="badge b-mut">${F.esc((MIGRATION[l.family] || {}).label || l.familyLabel)}</span>
+          ${techBadge(l)}
+          <span class="cu-line-conso"><span class="badge b-ok">retirée ${F.monthLabelShort(l.endedAt)}</span>
+            ${l.closingCredit ? '<span class="sub">avoir de clôture</span>' : ''}</span>
+          <span class="cu-line-cost text-muted" title="Coût du dernier mois plein — déjà sorti de la facture">${F.eur(l.lastNet)} évités</span>
+        </div>`;
+      }
       return `<div class="cu-line${mute ? ' is-mute' : ''}${cls}">
         <span class="mono strong">${F.esc(l.number)}</span>
         <span class="badge b-mut">${F.esc((MIGRATION[l.family] || {}).label || l.familyLabel)}</span>
@@ -291,13 +337,16 @@
             <div class="sub">${F.esc(F.titleCase(s.address || ''))}</div></td>
           <td>${s.lines.map(lineRow).join('')}</td>
           <td><span class="badge ${EFFORT_CLASS[s.maxEffort]}">${EFFORT_LABEL[s.maxEffort]}</span></td>
-          <td class="num strong">${F.eur(s.cost)}<div class="sub">${F.eur(s.cost * 12)}/an</div></td>
+          <td class="num strong">${F.eur(s.cost)}<div class="sub">${F.eur(s.cost * 12)}/an</div>
+            ${s.goneCost ? `<div class="sub" title="Déjà sorti de la facture">${F.eur(s.goneCost)}/mois retirés</div>` : ''}</td>
           <td>
-            <div class="strong">${s.doneLines}/${s.lines.length} migrée${s.lines.length > 1 ? 's' : ''}</div>
+            ${s.liveLines.length
+              ? `<div class="strong">${s.doneLines}/${s.liveLines.length} migrée${s.liveLines.length > 1 ? 's' : ''}</div>`
+              : '<div class="strong">plus de cuivre</div>'}
             ${stateBadge(s.suivi)}
-            <button class="btn btn-ghost btn-sm mt-1" data-edit="${F.esc(s.id)}"
+            ${s.liveLines.length ? `<button class="btn btn-ghost btn-sm mt-1" data-edit="${F.esc(s.id)}"
               title="Déclarer d'un coup toutes les lignes de ce site">
-              ${Icons.svg('edit')} ${s.suivi.state === 'todo' && !s.suivi.ref ? 'Tout le site' : 'Modifier le site'}</button></td>
+              ${Icons.svg('edit')} ${s.suivi.state === 'todo' && !s.suivi.ref ? 'Tout le site' : 'Modifier le site'}</button>` : ''}</td>
         </tr>`).join('') ||
         `<tr><td colspan="5"><div class="empty">${Icons.svg('check-c')}<div>Aucun site dans cette catégorie.</div></div></td></tr>`;
       document.querySelectorAll('[data-copper-tab]').forEach(c =>
@@ -350,7 +399,8 @@
     openTracker({
       icon: 'swap',
       title: F.esc(F.site(site)),
-      sub: `${F.esc(site.id)} · ${site.lines.length} ligne(s) cuivre · ${F.eur(site.cost)}/mois`,
+      // les lignes déjà retirées ne sont pas concernées par une déclaration
+      sub: `${F.esc(site.id)} · ${(site.liveLines || site.lines).length} ligne(s) cuivre en service · ${F.eur(site.cost)}/mois`,
       current: site.suivi || S.migrationOf(site.id),
       hint: 'Vaut pour toutes les lignes du site qui n\'ont pas de déclaration propre.',
       save: payload => S.setMigration(site.id, payload),
