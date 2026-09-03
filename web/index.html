@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptiTel — Analyse des factures télécoms</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f2611b'/%3E%3Cpath d='M10 17.5c2.8 2.6 6 4.4 9.7 5.2l1.8-2.9c.4-.6 1.1-.8 1.7-.5l3.9 1.9c.7.3 1 1.1.7 1.8l-1 2.4c-.5 1.2-1.7 1.9-3 1.7C15.3 25.7 7.4 20.6 4 11.9c-.4-1.2.1-2.5 1.2-3.1l2.3-1.2c.7-.4 1.5-.1 1.8.6l1.9 3.9c.3.6.1 1.3-.5 1.7l-2.9 1.8z' fill='%23fff' transform='scale(.82) translate(3.5 1)'/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════ SIDEBAR ══════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 32 32" width="26" height="26"><rect width="32" height="32" rx="8" fill="url(#gmark)"/><path d="M10 17.5c2.8 2.6 6 4.4 9.7 5.2l1.8-2.9c.4-.6 1.1-.8 1.7-.5l3.9 1.9c.7.3 1 1.1.7 1.8l-1 2.4c-.5 1.2-1.7 1.9-3 1.7C15.3 25.7 7.4 20.6 4 11.9c-.4-1.2.1-2.5 1.2-3.1l2.3-1.2c.7-.4 1.5-.1 1.8.6l1.9 3.9c.3.6.1 1.3-.5 1.7l-2.9 1.8z" fill="#fff" transform="scale(.82) translate(3.5 1)"/>
+          <defs><linearGradient id="gmark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8a3d"/><stop offset="1" stop-color="#f2611b"/></linearGradient></defs></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">OptiTel</div>
+        <div class="brand-sub">Factures télécoms</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <a class="nav-item" data-route="dashboard" href="#/dashboard">
+        <span class="nav-ico">svg:gauge</span><span class="nav-label">Vue d'ensemble</span>
+      </a>
+      <a class="nav-item" data-route="audit" href="#/audit">
+        <span class="nav-ico">svg:target</span><span class="nav-label">Audit &amp; économies</span>
+      </a>
+      <a class="nav-item nav-item-copper" data-route="copper" href="#/copper">
+        <span class="nav-ico">svg:swap</span><span class="nav-label">Fin du cuivre</span>
+        <span class="nav-badge" id="nav-copper-count"></span>
+      </a>
+      <a class="nav-item" data-route="lines" href="#/lines">
+        <span class="nav-ico">svg:phone</span><span class="nav-label">Lignes</span>
+        <span class="nav-badge" id="nav-lines-count"></span>
+      </a>
+      <a class="nav-item" data-route="sites" href="#/sites">
+        <span class="nav-ico">svg:building</span><span class="nav-label">Sites</span>
+      </a>
+      <a class="nav-item" data-route="conso" href="#/conso">
+        <span class="nav-ico">svg:wave</span><span class="nav-label">Consommations</span>
+      </a>
+      <a class="nav-item" data-route="remises" href="#/remises">
+        <span class="nav-ico">svg:percent</span><span class="nav-label">Remises marché</span>
+      </a>
+      <a class="nav-item" data-route="invoices" href="#/invoices">
+        <span class="nav-ico">svg:invoice</span><span class="nav-label">Factures &amp; import</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="entity-card">
+        <div class="entity-name" id="entity-name">—</div>
+        <div class="entity-meta" id="entity-meta">—</div>
+      </div>
+      <div class="sys-meta" id="dataset-meta"></div>
+      <div class="user-row" id="user-row" hidden>
+        <span class="user-ico">svg:user</span>
+        <span class="user-name" id="user-name"></span>
+        <a class="user-out" href="/logout" title="Se déconnecter">svg:logout</a>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══════════ MAIN ══════════ -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn mobile-only" id="menu-btn" title="Menu">svg:menu</button>
+        <h1 class="page-title" id="page-title">Vue d'ensemble</h1>
+        <div class="page-sub" id="page-sub"></div>
+      </div>
+      <div class="topbar-right">
+        <button class="search-trigger" id="search-btn" title="Rechercher (Ctrl+K)">
+          <span class="st-ico">svg:search</span>
+          <span class="st-txt">Rechercher…</span>
+          <kbd>Ctrl</kbd><kbd>K</kbd>
+        </button>
+        <div class="field select-field">
+          <label>Compte</label>
+          <select id="f-account"><option value="all">Tous</option></select>
+        </div>
+        <div class="field range-field">
+          <label>Période analysée</label>
+          <button class="range-btn" id="f-range" aria-haspopup="dialog" aria-expanded="false"
+                  title="Choisir la période analysée">
+            <span class="rb-ico">svg:calendar</span>
+            <span class="rb-label" id="f-range-label">Tout</span>
+            <span class="rb-caret">svg:chev-d</span>
+          </button>
+        </div>
+        <div class="field select-field">
+          <label>Mois affiché</label>
+          <select id="f-month"></select>
+        </div>
+        <div class="field">
+          <label>Parc</label>
+          <button class="switch" id="f-active" role="switch" aria-checked="false"
+                  title="Ne montrer que les lignes présentes sur la dernière facture de leur compte">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">Actifs</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="content" id="view"><!-- injected --></div>
+  </main>
+</div>
+
+<!-- drawer détail ligne -->
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="drawer-title" id="drawer-title">—</div>
+    <button class="icon-btn" id="drawer-close">svg:x</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<!-- toasts -->
+<div class="toasts" id="toasts"></div>
+
+<script src="js/fmt.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/store.js"></script>
+<script src="js/search.js"></script>
+<script src="js/views/dashboard.js"></script>
+<script src="js/views/lines.js"></script>
+<script src="js/views/sites.js"></script>
+<script src="js/views/conso.js"></script>
+<script src="js/views/audit.js"></script>
+<script src="js/views/copper.js"></script>
+<script src="js/views/remises.js"></script>
+<script src="js/views/invoices.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

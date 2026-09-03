@@ -1,0 +1,49 @@
+services:
+  optitel:
+    build: .
+    image: optitel:latest
+    container_name: optitel
+    restart: unless-stopped
+
+    environment:
+      # Compte de connexion. test/test par défaut : à remplacer avant tout usage
+      # réel — l'application le signale à l'écran et dans les journaux tant que
+      # c'est le cas. Préférer OPTITEL_PASSWORD_HASH (généré par
+      # `werkzeug.security.generate_password_hash`) pour ne pas laisser le mot
+      # de passe en clair dans ce fichier.
+      OPTITEL_USER: "${OPTITEL_USER:-test}"
+      OPTITEL_PASSWORD: "${OPTITEL_PASSWORD:-test}"
+      # Clé de signature des sessions. Si elle n'est pas fournie, elle est
+      # générée puis conservée sur le volume de données.
+      OPTITEL_SECRET_KEY: "${OPTITEL_SECRET_KEY:-}"
+      # Passer à 1 derrière HTTPS : le cookie de session cesse alors de circuler
+      # en clair. Laisser vide tant que l'accès se fait en http.
+      OPTITEL_SECURE_COOKIE: "${OPTITEL_SECURE_COOKIE:-}"
+      OPTITEL_SESSION_HOURS: "12"
+
+    ports:
+      # N'écoute que sur la boucle locale de l'hôte. L'authentification protège
+      # l'application, mais elle circule en clair : pour ouvrir l'accès à
+      # d'autres postes, passer par un reverse proxy qui porte le TLS.
+      - "127.0.0.1:8484:8484"
+
+    volumes:
+      # factures : PDF déposés par l'utilisateur — à sauvegarder, ce sont les sources
+      # dataset  : dataset.json (reconstruit) + migration.json — migration.json
+      #            est saisi à la main et ne se reconstruit pas : à sauvegarder
+      # cache    : texte extrait des PDF, régénérable, ne pas sauvegarder
+      - optitel-factures:/data/factures
+      - optitel-dataset:/data/dataset
+      - optitel-cache:/data/cache
+
+    # Le parseur charge des PDF entiers en mémoire ; 512 Mio suffisent pour les
+    # 78 fichiers actuels, à relever si le périmètre grandit.
+    mem_limit: 512m
+
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  optitel-factures:
+  optitel-dataset:
+  optitel-cache:

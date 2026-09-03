@@ -1,0 +1,22 @@
+# Données de facturation réelles — ne jamais versionner.
+# Les PDF, le dataset reconstruit et le cache contiennent des numéros de ligne,
+# des adresses de sites et des montants. Ils vivent sur un volume Docker.
+factures/
+data/
+.cache_txt/
+.analysis/
+
+# Suivi de migration et clé de session, s'ils traînent hors du volume
+*.secret_key
+migration.json
+dataset*.json
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
