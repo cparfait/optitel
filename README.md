@@ -46,6 +46,24 @@ Sur cette base, l'application signale :
 L'export `/api/export/reclamation` produit un poste réclamé par facture, chiffré
 et recalculable à partir de ses seules colonnes.
 
+## Suivre le parc
+
+**Mouvements du parc** compare deux mois de facture choisis librement et liste
+les numéros qui ont disparu entre les deux — pour contrôler une résiliation
+demandée, ou expliquer une marche d'escalier sur la courbe du parc. Export CSV
+par `/api/export/mouvements?from=AAAA-MM&to=AAAA-MM`.
+
+**Fin du cuivre** se tient ligne par ligne : sur un site mixte, le T0 bascule en
+VoIP quand l'ascenseur attend encore son ascensoriste. Une déclaration faite au
+niveau du site vaut pour toutes ses lignes sans saisie propre, et l'interface
+indique lesquelles en héritent.
+
+**Renommer un site** quand la facture le nomme mal. Le nom facturé n'est jamais
+écrasé : il reste affiché en dessous pour retrouver le sous-compte sur le PDF.
+La vue Sites signale les libellés portés par plusieurs bâtiments — dix
+sous-comptes nommés « MAIRIE DE CHATILLON » à neuf adresses ne permettent pas de
+savoir de quel local on parle.
+
 ## Structure
 
 ```
@@ -53,7 +71,7 @@ parser_invoice.py    extraction et normalisation des factures PDF
 server.py            API Flask, exports CSV, service du front
 auth.py              authentification (compte local ; AD/LDAPS à venir)
 wsgi.py              point d'entrée gunicorn
-web/                 interface (8 vues, sans framework)
+web/                 interface (9 vues, sans framework)
 Dockerfile           image de production
 ```
 

@@ -58,6 +58,12 @@
       s.suivi = S.migrationOf(s.id);
       s.net = s.internet ? netByNumber[s.internet] : null;
       s.lines.sort((a, b) => b.lastNet - a.lastNet);
+      // Le suivi se tient ligne par ligne : sur un site mixte, le T0 bascule en
+      // VoIP pendant que l'ascenseur attend son ascensoriste. L'état du site est
+      // donc déduit de ses lignes, et non l'inverse.
+      s.lineStates = s.lines.map(l => S.migrationOfLine(l));
+      s.doneLines = s.lineStates.filter(x => x.state === 'migrated').length;
+      s.openLines = s.lineStates.filter(x => !['migrated', 'kept'].includes(x.state)).length;
       // Une ligne cuivre sans le moindre appel se résilie au lieu de se migrer —
       // sauf celles dont l'absence de trafic est normale : un accès internet ne
       // passe pas d'appels et une ligne d'ascenseur ne sonne qu'en cas de panne.
@@ -69,11 +75,16 @@
     const silentCost = sites.reduce((a, s) =>
       a + s.silent.reduce((b, l) => b + l.lastNet, 0), 0);
 
-    // avancement déclaré
-    const done = sites.filter(s => s.suivi.state === 'migrated');
-    const engaged = sites.filter(s => ['study', 'ordered'].includes(s.suivi.state));
-    const doneCost = done.reduce((a, s) => a + s.cost, 0);
-    const progress = sites.length ? (done.length / sites.length) * 100 : 0;
+    // Avancement déclaré, compté en lignes : c'est l'unité de commande, et un
+    // site à moitié migré ne devait pas compter pour zéro comme auparavant.
+    const lineStates = copper.map(l => ({ line: l, st: S.migrationOfLine(l) }));
+    const byState = st => lineStates.filter(x => x.st.state === st);
+    const doneLines = byState('migrated');
+    const engagedLines = lineStates.filter(x => ['study', 'ordered'].includes(x.st.state));
+    const doneCost = doneLines.reduce((a, x) => a + x.line.lastNet, 0);
+    const progress = copper.length ? (doneLines.length / copper.length) * 100 : 0;
+    // un site est traité quand toutes ses lignes le sont
+    const done = sites.filter(s => s.openLines === 0);
 
     // répartition par technologie
     const byFam = {};
@@ -106,7 +117,7 @@
             `<span class="up">${F.eur(silentCost)} /mois · à résilier plutôt qu'à migrer</span>`,
             'phone-off', 'var(--teal)', 'var(--teal-soft)')}
           ${kpi('Migration déclarée', F.pct(progress),
-            `<span>${done.length}/${sites.length} sites · ${engaged.length} en cours</span>`,
+            `<span>${doneLines.length}/${copper.length} lignes · ${engagedLines.length} en cours · ${done.length}/${sites.length} sites soldés</span>`,
             'check-c', 'var(--green)', 'var(--green-soft)')}
         </div>
 
@@ -119,9 +130,10 @@
             </div>
             <div class="flex" style="gap:20px;flex-wrap:wrap">
               ${S.MIGRATION_STATES.map(st => {
-                const n = sites.filter(s => s.suivi.state === st.id).length;
+                const n = byState(st.id).length;
                 return `<div><div class="kpi-label">${st.label}</div>
-                  <div style="font-size:19px;font-weight:700">${n}</div></div>`;
+                  <div style="font-size:19px;font-weight:700">${n}</div>
+                  <div class="kpi-label" style="font-size:9.5px">ligne(s)</div></div>`;
               }).join('')}
               <div><div class="kpi-label">Économie déclarée</div>
                 <div style="font-size:19px;font-weight:700;color:var(--green)">${F.eur(doneCost * 12, 0)}<span style="font-size:12px;font-weight:500">/an</span></div></div>
@@ -197,14 +209,34 @@
       return '<b>aucun appel sur la période</b>';
     };
 
+    /* Statut d'une ligne, avec l'origine de la saisie. « hérité » dit que la
+       ligne suit la déclaration faite au niveau du site : sans cette mention on
+       ne saurait pas si la ligne a été traitée pour elle-même. */
+    const lineState = (l) => {
+      const st = S.migrationOfLine(l);
+      const def = S.MIGRATION_STATES.find(x => x.id === st.state) || S.MIGRATION_STATES[0];
+      const herite = st.level === 'site';
+      return `<span class="cu-line-state">
+        ${st.level === 'none' ? '' : `<span class="badge ${def.cls}"${herite
+          ? ' title="Déclaré au niveau du site"' : ''}>${def.label}${herite ? ' ·' : ''}</span>`}
+        ${herite ? '<span class="sub">hérité</span>' : ''}
+        <button class="btn btn-ghost btn-xs" data-edit-line="${F.esc(l.key)}"
+          title="Déclarer l'avancement de cette ligne">${Icons.svg('edit')}</button>
+      </span>`;
+    };
+
     const lineRow = (l) => {
       const mute = !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && l.totals.calls === 0;
-      return `<div class="cu-line${mute ? ' is-mute' : ''}">
+      const st = S.migrationOfLine(l);
+      const cls = st.state === 'migrated' ? ' is-done'
+        : st.state === 'kept' ? ' is-kept' : '';
+      return `<div class="cu-line${mute ? ' is-mute' : ''}${cls}">
         <span class="mono strong">${F.esc(l.number)}</span>
         <span class="badge b-mut">${F.esc((MIGRATION[l.family] || {}).label || l.familyLabel)}</span>
         ${techBadge(l)}
         <span class="cu-line-conso">${trafficCell(l)}</span>
         <span class="cu-line-cost">${F.eur(l.lastNet)}</span>
+        ${lineState(l)}
       </div>${l.family === 'internet' ? supportRows(l) : ''}`;
     };
 
@@ -237,26 +269,39 @@
 
     const paint = () => {
       let list = tab === 'silent' ? sites.filter(s => s.silent.length)
-        : tab === 'open' ? sites.filter(s => !['migrated', 'kept'].includes(s.suivi.state))
+        : tab === 'open' ? sites.filter(s => s.openLines > 0)
         : sites;
-      if (stateFilter) list = list.filter(s => s.suivi.state === stateFilter);
+      // le filtre de statut porte sur les lignes : un site n'a plus un état
+      // unique, il en a autant que de lignes
+      if (stateFilter) {
+        list = list.filter(s => s.lineStates.some(x => x.state === stateFilter));
+      }
       document.getElementById('copper-body').innerHTML = list.map(s => `
-        <tr data-site="${F.esc(s.id)}" class="cu-row st-${s.suivi.state}">
+        <tr data-site="${F.esc(s.id)}" class="cu-row${s.openLines === 0 ? ' st-migrated' : ''}">
           <td><b>${F.esc(F.site(s))}</b>
             <div class="sub mono">${F.esc(s.id)}</div>
+            ${F.siteRenamed(s) ? `<div class="sub" title="Nom porté par la facture">sur facture : ${F.esc(F.siteBilled(s))}</div>` : ''}
             <div class="sub">${F.esc(F.titleCase(s.address || ''))}</div></td>
           <td>${s.lines.map(lineRow).join('')}</td>
           <td><span class="badge ${EFFORT_CLASS[s.maxEffort]}">${EFFORT_LABEL[s.maxEffort]}</span></td>
           <td class="num strong">${F.eur(s.cost)}<div class="sub">${F.eur(s.cost * 12)}/an</div></td>
-          <td>${stateBadge(s.suivi)}
-            <button class="btn btn-ghost btn-sm mt-1" data-edit="${F.esc(s.id)}">
-              ${Icons.svg('edit')} ${s.suivi.state === 'todo' && !s.suivi.ref ? 'Déclarer' : 'Modifier'}</button></td>
+          <td>
+            <div class="strong">${s.doneLines}/${s.lines.length} migrée${s.lines.length > 1 ? 's' : ''}</div>
+            ${stateBadge(s.suivi)}
+            <button class="btn btn-ghost btn-sm mt-1" data-edit="${F.esc(s.id)}"
+              title="Déclarer d'un coup toutes les lignes de ce site">
+              ${Icons.svg('edit')} ${s.suivi.state === 'todo' && !s.suivi.ref ? 'Tout le site' : 'Modifier le site'}</button></td>
         </tr>`).join('') ||
         `<tr><td colspan="5"><div class="empty">${Icons.svg('check-c')}<div>Aucun site dans cette catégorie.</div></div></td></tr>`;
       document.querySelectorAll('[data-copper-tab]').forEach(c =>
         c.classList.toggle('on', c.dataset.copperTab === tab));
       document.querySelectorAll('[data-edit]').forEach(b =>
         b.addEventListener('click', () => openEditor(bySite[b.dataset.edit], () => render(view))));
+      document.querySelectorAll('[data-edit-line]').forEach(b =>
+        b.addEventListener('click', () => {
+          const l = copper.find(x => x.key === b.dataset.editLine);
+          if (l) openLineEditor(l, () => render(view));
+        }));
     };
     paint();
     document.querySelectorAll('[data-copper-tab]').forEach(c =>
@@ -266,19 +311,60 @@
     });
   }
 
-  /* Saisie de l'avancement pour un site : statut, référence de commande, date, note. */
+  /* Saisie de l'avancement d'une ligne. Le formulaire est celui du site ; seuls
+     l'intitulé et la destination de l'enregistrement changent. */
+  function openLineEditor(line, onSaved) {
+    if (!line) return;
+    const st = S.migrationOfLine(line);
+    const m = MIGRATION[line.family] || {};
+    openTracker({
+      icon: famTrackIcon(line.family),
+      title: F.esc(line.number),
+      sub: `${F.esc(m.label || line.familyLabel)} · ${F.esc(F.site(line))} · ${F.eur(line.lastNet)}/mois`,
+      // une ligne qui n'a jamais été déclarée pour elle-même part de l'état
+      // hérité du site : on ne repart pas de zéro à l'ouverture
+      current: st,
+      hint: st.level === 'site'
+        ? 'Cette ligne suit pour l\'instant la déclaration faite sur le site. Enregistrer ici la détache et ne vaudra que pour elle.'
+        : (m.note || ''),
+      save: payload => S.setMigrationLine(line.key, payload),
+      saved: `Suivi enregistré pour ${line.number}`,
+    }, onSaved);
+  }
+
+  function famTrackIcon(f) {
+    return f === 'internet' ? 'wifi' : f === 't0_ascenseur' ? 'swap' : 'phone';
+  }
+
+  /* Saisie de l'avancement pour un site : vaut pour toutes ses lignes qui n'ont
+     pas de déclaration propre. */
   function openEditor(site, onSaved) {
     if (!site) return;
-    const st = site.suivi || S.migrationOf(site.id);
+    openTracker({
+      icon: 'swap',
+      title: F.esc(F.site(site)),
+      sub: `${F.esc(site.id)} · ${site.lines.length} ligne(s) cuivre · ${F.eur(site.cost)}/mois`,
+      current: site.suivi || S.migrationOf(site.id),
+      hint: 'Vaut pour toutes les lignes du site qui n\'ont pas de déclaration propre.',
+      save: payload => S.setMigration(site.id, payload),
+      saved: 'Suivi enregistré pour ' + F.site(site),
+    }, onSaved);
+  }
+
+  /* Formulaire de suivi, partagé par le site et la ligne : statut, référence de
+     commande, date, note. Un seul endroit à corriger le jour où la saisie
+     change. */
+  function openTracker(cfg, onSaved) {
+    const st = cfg.current || {};
     const box = document.createElement('div');
     box.className = 'palette-backdrop open';
     box.innerHTML = `
       <div class="palette" style="max-width:520px" role="dialog" aria-modal="true">
         <div class="palette-head" style="gap:12px">
-          <span class="palette-ico">${Icons.svg('swap')}</span>
+          <span class="palette-ico">${Icons.svg(cfg.icon)}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:650">${F.esc(F.site(site))}</div>
-            <div class="sub">${F.esc(site.id)} · ${site.lines.length} ligne(s) cuivre · ${F.eur(site.cost)}/mois</div>
+            <div style="font-weight:650">${cfg.title}</div>
+            <div class="sub">${cfg.sub}</div>
           </div>
           <button class="icon-btn" data-cancel>${Icons.svg('x')}</button>
         </div>
@@ -298,6 +384,8 @@
           </div>
           <div class="field mt-2"><label>Note</label>
             <textarea id="cu-note" rows="3" placeholder="Contexte, interlocuteur, contrainte technique…">${F.esc(st.note || '')}</textarea></div>
+          ${cfg.hint ? `<div class="audit-note" style="margin-top:12px">${Icons.svg('info')}
+            <div>${F.esc(cfg.hint)}</div></div>` : ''}
         </div>
         <div class="palette-foot" style="justify-content:flex-end;gap:8px">
           <button class="btn btn-ghost btn-sm" data-cancel>Annuler</button>
@@ -322,14 +410,14 @@
       const btn = box.querySelector('#cu-save');
       btn.disabled = true; btn.textContent = 'Enregistrement…';
       try {
-        await S.setMigration(site.id, {
+        await cfg.save({
           state: chosen,
           ref: box.querySelector('#cu-ref').value,
           date: box.querySelector('#cu-date').value,
           note: box.querySelector('#cu-note').value,
         });
         close();
-        window.toast('Suivi enregistré pour ' + F.site(site));
+        window.toast(cfg.saved);
         onSaved && onSaved();
       } catch (err) {
         btn.disabled = false; btn.textContent = 'Enregistrer';

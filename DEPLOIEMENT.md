@@ -35,6 +35,7 @@ Le `--timeout 300` couvre la reconstruction complète, qui lit 78 PDF.
 |---|---|---|
 | `optitel-factures` → `/data/factures` | PDF déposés | **Oui** — ce sont les sources |
 | `optitel-dataset` → `/data/dataset` | `dataset.json` + `migration.json` | **Oui** pour `migration.json` |
+| | `migration.json` porte le suivi par site, **par ligne**, et les renommages de sites | |
 | `optitel-cache` → `/data/cache` | Texte extrait des PDF | Non — régénérable |
 
 `dataset.json` se reconstruit à partir des PDF. **`migration.json` non** : c'est

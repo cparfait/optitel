@@ -343,66 +343,139 @@ MIGRATION_STATES = ('todo', 'study', 'ordered', 'migrated', 'kept')
 
 
 def load_migration():
+    """-> {'sites': {...}, 'lines': {...}, 'siteNames': {...}}
+
+    Le fichier ne portait à l'origine que `sites`. Les clés absentes sont
+    complétées à la lecture : un fichier écrit par une version précédente reste
+    exploitable sans migration de données.
+    """
+    empty = {'sites': {}, 'lines': {}, 'siteNames': {}}
     if not os.path.exists(MIGRATION_PATH):
-        return {}
+        return empty
     try:
         with open(MIGRATION_PATH, encoding='utf-8') as f:
-            return json.load(f).get('sites', {})
+            raw = json.load(f)
     except (ValueError, OSError):
-        return {}
+        return empty
+    if not isinstance(raw, dict):
+        return empty
+    return {k: (raw.get(k) if isinstance(raw.get(k), dict) else {}) for k in empty}
 
 
-def save_migration(sites):
+def save_migration(store):
     os.makedirs(os.path.dirname(MIGRATION_PATH), exist_ok=True)
     tmp = MIGRATION_PATH + '.tmp'
+    payload = {'updatedAt': datetime.datetime.now().isoformat(timespec='seconds')}
+    payload.update(store)
     with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump({'updatedAt': datetime.datetime.now().isoformat(timespec='seconds'),
-                   'sites': sites}, f, ensure_ascii=False, indent=1)
+        json.dump(payload, f, ensure_ascii=False, indent=1)
     os.replace(tmp, MIGRATION_PATH)   # écriture atomique : pas de fichier tronqué
 
 
-@app.get('/api/migration')
-def api_migration_get():
-    return jsonify({'ok': True, 'sites': load_migration()})
+def _read_body():
+    """Corps JSON de la requête, ou (None, réponse d'erreur).
 
-
-@app.post('/api/migration/<site_id>')
-def api_migration_set(site_id):
-    # Un corps illisible ne doit jamais être interprété comme « remettre à zéro » :
-    # on refuse explicitement plutôt que d'effacer une saisie par accident.
+    Un corps illisible ne doit jamais être interprété comme « remettre à zéro » :
+    on refuse explicitement plutôt que d'effacer une saisie par accident.
+    """
     try:
         body = json.loads(request.get_data().decode('utf-8'))
     except (ValueError, UnicodeDecodeError):
-        return jsonify({'ok': False, 'error': 'corps JSON invalide (attendu : UTF-8)'}), 400
+        return None, (jsonify({'ok': False,
+                               'error': 'corps JSON invalide (attendu : UTF-8)'}), 400)
     if not isinstance(body, dict):
-        return jsonify({'ok': False, 'error': 'corps JSON invalide'}), 400
+        return None, (jsonify({'ok': False, 'error': 'corps JSON invalide'}), 400)
+    return body, None
 
+
+def _entry(body):
+    return {
+        'state': body.get('state', 'todo'),
+        'ref': (body.get('ref') or '').strip()[:80],
+        'note': (body.get('note') or '').strip()[:500],
+        'date': (body.get('date') or '').strip()[:10],
+        'updatedAt': datetime.datetime.now().isoformat(timespec='seconds'),
+    }
+
+
+def _set_tracked(bucket, key, body):
+    """Écrit une saisie de suivi dans `bucket` ('sites' ou 'lines')."""
     state = body.get('state', 'todo')
     if state not in MIGRATION_STATES:
         return jsonify({'ok': False, 'error': f'état inconnu : {state}'}), 400
     with _lock:
-        sites = load_migration()
+        store = load_migration()
         if state == 'todo' and not (body.get('ref') or body.get('note')):
-            sites.pop(site_id, None)          # retour à l'état par défaut : on oublie
+            store[bucket].pop(key, None)      # retour à l'état par défaut : on oublie
         else:
-            sites[site_id] = {
-                'state': state,
-                'ref': (body.get('ref') or '').strip()[:80],
-                'note': (body.get('note') or '').strip()[:500],
-                'date': (body.get('date') or '').strip()[:10],
-                'updatedAt': datetime.datetime.now().isoformat(timespec='seconds'),
-            }
-        save_migration(sites)
-    return jsonify({'ok': True, 'sites': sites})
+            store[bucket][key] = _entry(body)
+        save_migration(store)
+    return jsonify({'ok': True, **store})
+
+
+@app.get('/api/migration')
+def api_migration_get():
+    return jsonify({'ok': True, **load_migration()})
+
+
+@app.post('/api/migration/line/<path:line_key>')
+def api_migration_line_set(line_key):
+    """Suivi d'une ligne. Une migration se commande ligne par ligne : sur un site
+    mixte, le T0 bascule en VoIP quand l'ascenseur attend son ascensoriste."""
+    body, err = _read_body()
+    if err:
+        return err
+    return _set_tracked('lines', line_key, body)
+
+
+@app.delete('/api/migration/line/<path:line_key>')
+def api_migration_line_del(line_key):
+    with _lock:
+        store = load_migration()
+        store['lines'].pop(line_key, None)
+        save_migration(store)
+    return jsonify({'ok': True, **store})
+
+
+@app.post('/api/migration/<site_id>')
+def api_migration_set(site_id):
+    body, err = _read_body()
+    if err:
+        return err
+    return _set_tracked('sites', site_id, body)
 
 
 @app.delete('/api/migration/<site_id>')
 def api_migration_del(site_id):
     with _lock:
-        sites = load_migration()
-        sites.pop(site_id, None)
-        save_migration(sites)
-    return jsonify({'ok': True, 'sites': sites})
+        store = load_migration()
+        store['sites'].pop(site_id, None)
+        save_migration(store)
+    return jsonify({'ok': True, **store})
+
+
+# ------------------------------------------------------------ renommage de site
+@app.post('/api/site-name/<site_id>')
+def api_site_name(site_id):
+    """Nom d'usage d'un site, quand celui de la facture ne permet pas de le
+    reconnaître. Le nom facturé n'est jamais écrasé : il reste dans le dataset
+    et l'interface l'affiche à côté, pour que le rapprochement avec le PDF
+    reste possible."""
+    body, err = _read_body()
+    if err:
+        return err
+    name = (body.get('name') or '').strip()[:80]
+    with _lock:
+        store = load_migration()
+        if name:
+            store['siteNames'][site_id] = {
+                'name': name,
+                'updatedAt': datetime.datetime.now().isoformat(timespec='seconds'),
+            }
+        else:
+            store['siteNames'].pop(site_id, None)   # vider = revenir au nom facturé
+        save_migration(store)
+    return jsonify({'ok': True, **store})
 
 
 def _csv(rows, filename):
@@ -672,13 +745,67 @@ def export_reclamation():
     return _csv(rows, 'dossier_reclamation.csv')
 
 
+@app.get('/api/export/mouvements')
+def export_mouvements():
+    """Lignes entrées et sorties entre deux mois de facture.
+
+    Les bornes viennent de l'appelant : contrôler une résiliation demandée en
+    avril suppose de comparer avril à un mois postérieur, pas de se caler sur la
+    dernière facture.
+    """
+    if not dataset_exists():
+        rebuild()
+    ds = json.load(open(DATA_PATH, encoding='utf-8'))
+    months = ds['months']
+    if not months:
+        return _csv([], 'mouvements_parc.csv')
+    frm = request.args.get('from') or months[0]
+    to = request.args.get('to') or months[-1]
+    if frm not in months or to not in months:
+        return jsonify({'ok': False, 'error': 'mois hors périmètre'}), 400
+    if frm > to:
+        frm, to = to, frm
+    account = request.args.get('account')
+    noms = load_migration()['siteNames']
+
+    rows = []
+    for l in ds['lines']:
+        if account and l['account'] != account:
+            continue
+        a, b = l['months'].get(frm), l['months'].get(to)
+        if bool(a) == bool(b):
+            continue                      # inchangée : présente ou absente aux deux dates
+        sortie = bool(a)
+        v = a or b
+        rows.append({
+            'mouvement': 'retirée' if sortie else 'ajoutée',
+            'mois_depart': frm,
+            'mois_arrivee': to,
+            'numero': l['number'],
+            'type': l['familyLabel'],
+            'compte': l['account'],
+            'sous_compte': l['siteId'],
+            'site': noms.get(l['siteId'], {}).get('name') or l['siteName'],
+            'site_sur_facture': l['siteName'],
+            'adresse': l.get('siteAddress', ''),
+            'cout_mensuel_eur': round(v['net'], 2),
+            'cout_annuel_eur': round(v['net'] * 12, 2),
+            'premiere_facture': l['first'],
+            'derniere_facture': l['last'],
+        })
+    # les sorties d'abord, par montant : c'est ce qu'on vient vérifier
+    rows.sort(key=lambda r: (r['mouvement'] != 'retirée', -r['cout_mensuel_eur']))
+    return _csv(rows, f'mouvements_{frm}_{to}.csv')
+
+
 @app.get('/api/export/migration')
 def export_migration():
     """Plan de migration cuivre : une ligne par ligne RTC encore en service."""
     if not dataset_exists():
         rebuild()
     ds = json.load(open(DATA_PATH, encoding='utf-8'))
-    suivi = load_migration()
+    store = load_migration()
+    suivi, par_ligne, noms = store['sites'], store['lines'], store['siteNames']
     tech_labels = {'fibre': 'fibre', 'adsl': 'ADSL', 'sdsl': 'SDSL',
                    'xdsl_presume': 'xDSL présumé'}
     last_by_account = {}
@@ -693,13 +820,18 @@ def export_migration():
         cur = l['months'].get(ref_month)
         if not cur or not l.get('onCopper'):
             continue
-        st = suivi.get(l['siteId'], {})
+        # une saisie portée sur la ligne prime sur celle du site : c'est la plus
+        # précise des deux, et c'est à ce niveau que la commande est passée
+        ligne_st = par_ligne.get(l['key'])
+        st = ligne_st or suivi.get(l['siteId'], {})
+        renomme = noms.get(l['siteId'], {}).get('name', '')
         rows.append({
             'numero': l['number'],
             'technologie': l['familyLabel'],
             'acces': tech_labels.get(l.get('accessTech'), ''),
             'sous_compte': l['siteId'],
-            'site': l['siteName'],
+            'site': renomme or l['siteName'],
+            'site_sur_facture': l['siteName'],
             'direction': l.get('siteDept', ''),
             'adresse': l.get('siteAddress', ''),
             'acces_internet_sur_site': l.get('siteInternet', ''),
@@ -707,6 +839,7 @@ def export_migration():
             'cout_mensuel_eur': cur['net'],
             'cout_annuel_eur': round(cur['net'] * 12, 2),
             'statut_migration': labels.get(st.get('state', 'todo'), 'à traiter'),
+            'suivi_porte_par': 'ligne' if ligne_st else ('site' if st else ''),
             'reference_commande': st.get('ref', ''),
             'date_action': st.get('date', ''),
             'note': st.get('note', ''),

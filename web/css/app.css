@@ -199,6 +199,17 @@ select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px r
   transition: background .15s, border-color .15s;
 }
 .icon-btn:hover { background: var(--bg); border-color: #c3c8d4; }
+
+/* Crayon de renommage : discret dans le titre de la carte, il n'apparaît
+   franchement qu'au survol pour ne pas concurrencer le nom du site. */
+.site-rename {
+  width: 22px; height: 22px; padding: 0; vertical-align: 1px;
+  margin-left: 5px; border-color: transparent; background: transparent;
+  opacity: 0; transition: opacity .15s;
+}
+.site-rename svg { width: 13px; height: 13px; }
+.card:hover .site-rename, .site-rename:focus { opacity: .75; }
+.site-rename:hover { opacity: 1; }
 .icon-btn svg { width: 17px; height: 17px; }
 
 .btn {
@@ -838,6 +849,25 @@ tr.row-flag:hover { background: var(--red-soft); }
 .cu-line-cost { font-size: 12px; font-weight: 600; min-width: 62px; text-align: right; }
 .cu-line.is-mute .cu-line-conso { color: var(--amber); }
 .cu-line.is-mute .mono.strong { color: var(--muted); }
+
+/* Suivi porté par la ligne : statut + accès à la saisie, au bout de la ligne. */
+.cu-line-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-width: 118px; justify-content: flex-end;
+}
+.cu-line-state .sub { font-size: 10px; }
+.btn-xs {
+  padding: 2px 5px; font-size: 11px; line-height: 1;
+  border-color: transparent; background: transparent; opacity: 0;
+  transition: opacity .15s;
+}
+.btn-xs svg { width: 12px; height: 12px; }
+.cu-line:hover .btn-xs, .btn-xs:focus { opacity: .8; }
+.btn-xs:hover { opacity: 1; border-color: var(--line-2); background: var(--card); }
+/* une ligne soldée s'efface visuellement sans disparaître */
+.cu-line.is-done { opacity: .58; }
+.cu-line.is-kept { opacity: .58; }
+.cu-line.is-done .mono.strong { text-decoration: line-through; }
 
 /* lignes support rattachées à un accès xDSL */
 .cu-support {

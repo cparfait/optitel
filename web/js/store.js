@@ -129,31 +129,68 @@
     { id: 'kept', label: 'Conservé', cls: 'b-res' },
   ];
 
+  S.migrationLines = {};    // suivi porté par une ligne
+  S.siteNames = {};         // noms d'usage, quand la facture nomme mal un site
+
+  function absorb(j) {
+    S.migration = j.sites || {};
+    S.migrationLines = j.lines || {};
+    S.siteNames = j.siteNames || {};
+  }
+
   S.loadMigration = async function () {
     try {
       const r = await fetch('/api/migration', { cache: 'no-store' });
-      S.migration = (await r.json()).sites || {};
+      absorb(await r.json());
     } catch (e) {
-      S.migration = {};
+      absorb({});
     }
     return S.migration;
   };
 
+  const BLANK = { state: 'todo', ref: '', note: '', date: '' };
+
   S.migrationOf = function (siteId) {
-    return S.migration[siteId] || { state: 'todo', ref: '', note: '', date: '' };
+    return S.migration[siteId] || BLANK;
+  };
+
+  /* Suivi effectif d'une ligne : sa propre saisie si elle existe, sinon celle
+     de son site. Une commande se passe ligne par ligne — sur un site mixte, le
+     T0 bascule en VoIP quand l'ascenseur attend encore son ascensoriste — mais
+     déclarer le site entier reste possible et vaut pour toutes ses lignes. */
+  S.migrationOfLine = function (line) {
+    const own = S.migrationLines[line.key];
+    if (own) return { ...own, level: 'line' };
+    const site = S.migration[line.siteId];
+    if (site) return { ...site, level: 'site' };
+    return { ...BLANK, level: 'none' };
   };
 
   S.setMigration = async function (siteId, payload) {
-    const r = await fetch(`/api/migration/${encodeURIComponent(siteId)}`, {
+    return post(`/api/migration/${encodeURIComponent(siteId)}`, payload);
+  };
+
+  S.setMigrationLine = async function (lineKey, payload) {
+    return post(`/api/migration/line/${encodeURIComponent(lineKey)}`, payload);
+  };
+
+  /* Nom d'usage d'un site. Vider le champ revient au nom porté par la facture,
+     qui n'est jamais écrasé. */
+  S.setSiteName = async function (siteId, name) {
+    return post(`/api/site-name/${encodeURIComponent(siteId)}`, { name });
+  };
+
+  async function post(url, payload) {
+    const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'Enregistrement refusé');
-    S.migration = j.sites || {};
-    return S.migration;
-  };
+    absorb(j);
+    return j;
+  }
 
   /* Mois facturés pour un compte (ou tous) — sert aux sélecteurs de période,
      qui doivent pouvoir proposer plus large que la plage actuellement filtrée. */
@@ -187,6 +224,33 @@
   S.allLines = function () {
     if (!S.data) return [];
     return S.data.lines.filter(l => S.account === 'all' || l.account === S.account);
+  };
+
+  /* Sites que la facture nomme de façon ambiguë : même libellé porté par
+     plusieurs bâtiments distincts. Dix sous-comptes s'appellent « MAIRIE DE
+     CHATILLON » à neuf adresses différentes — sur cette liste on ne sait pas de
+     quel local on parle, et une commande de migration part au mauvais endroit.
+
+     Les sous-comptes multiples d'un même bâtiment ne sont pas concernés : là,
+     le nom identique est juste. On compare donc sur `placeKey`, qui normalise
+     l'adresse, et non sur la chaîne brute. */
+  S.ambiguousSites = function () {
+    const byName = {};
+    (S.data.sites || []).forEach(s => {
+      const n = (s.name || '').trim().toUpperCase();
+      if (!n) return;
+      (byName[n] = byName[n] || []).push(s);
+    });
+    const out = [];
+    Object.values(byName).forEach(group => {
+      const places = new Set(group.map(s => s.placeKey || s.address || s.id));
+      if (group.length > 1 && places.size > 1) out.push(...group);
+    });
+    // une fois renommé, le site sort de la liste : c'est le nom d'usage qui
+    // lève l'ambiguïté, pas celui de la facture
+    return out.filter(s => !window.fmt.siteRenamed(s))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '')
+        || (a.address || '').localeCompare(b.address || ''));
   };
 
   /* Sites du compte courant, sans le filtre de parc global. */

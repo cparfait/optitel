@@ -69,14 +69,42 @@
         return w.charAt(0).toUpperCase() + w.slice(1);
       }).join('');
     },
+    /* Identifiant de sous-compte, qu'on reçoive un site ({id}) ou une ligne
+       ({siteId}) : les deux se croisent dans les vues. */
+    siteId(s) { return s && (s.id || s.siteId) || ''; },
+
+    /* Nom porté par la facture, mis en casse lisible. Reste accessible même
+       quand un nom d'usage le remplace : c'est lui qui permet de retrouver le
+       sous-compte sur le PDF. */
+    siteBilled(s) {
+      if (!s) return '';
+      const name = this.titleCase(s.name || s.siteName || '');
+      const dept = this.titleCase(s.dept || s.siteDept || '');
+      if (!name) return '';
+      return dept && !name.toLowerCase().includes(dept.toLowerCase())
+        ? `${dept} · ${name}` : name;
+    },
+
+    /* Nom d'usage s'il a été saisi, sinon celui de la facture.
+       La résolution vit ici parce que toutes les vues passent par `site()` :
+       la placer plus haut obligerait à retoucher chaque appel. */
+    siteOverride(s) {
+      const id = this.siteId(s);
+      const o = id && window.Store && window.Store.siteNames
+        && window.Store.siteNames[id];
+      return o ? o.name : '';
+    },
+
     // Nom d'un sous-compte : nom du local, préfixé de sa direction si présente.
     site(s) {
       if (!s) return '—';
-      const name = this.titleCase(s.name || s.siteName || '');
-      const dept = this.titleCase(s.dept || s.siteDept || '');
-      if (!name) return '—';
-      return dept && !name.toLowerCase().includes(dept.toLowerCase())
-        ? `${dept} · ${name}` : name;
+      return this.siteOverride(s) || this.siteBilled(s) || '—';
+    },
+
+    /* Vrai si le site porte un nom d'usage différent de celui de la facture. */
+    siteRenamed(s) {
+      const o = this.siteOverride(s);
+      return !!o && o !== this.siteBilled(s);
     },
     el(html) {
       const t = document.createElement('template');

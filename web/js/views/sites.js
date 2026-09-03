@@ -43,6 +43,8 @@
           </div>
         </div>
 
+        ${ambiguousCard()}
+
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px" id="sites-grid">
           ${sites.map(x => siteCard(x, months)).join('')}
         </div>
@@ -58,6 +60,111 @@
       state.open = state.open === btn.dataset.siteToggle ? null : btn.dataset.siteToggle;
       render(view);
     }));
+    document.querySelectorAll('[data-rename]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const s = (S.data.sites || []).find(x => x.id === btn.dataset.rename);
+      if (s) openRename(s, () => render(view));
+    }));
+  }
+
+  /* Saisie du nom d'usage. Le nom facturé est rappelé et jamais modifié :
+     c'est lui qui permet de retrouver le sous-compte sur le PDF. */
+  function openRename(site, onSaved) {
+    const box = document.createElement('div');
+    box.className = 'palette-backdrop open';
+    box.innerHTML = `
+      <div class="palette" style="max-width:480px" role="dialog" aria-modal="true">
+        <div class="palette-head" style="gap:12px">
+          <span class="palette-ico">${Icons.svg('building')}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:650">Renommer un site</div>
+            <div class="sub">${F.esc(site.id)} · ${F.esc(F.titleCase(site.address || ''))}</div>
+          </div>
+          <button class="icon-btn" data-cancel>${Icons.svg('x')}</button>
+        </div>
+        <div class="palette-body" style="padding:16px">
+          <div class="field mb-2">
+            <label>Nom sur la facture</label>
+            <div class="flex" style="min-height:34px;align-items:center;color:var(--muted)">
+              ${F.esc(F.siteBilled(site)) || '—'}</div>
+          </div>
+          <div class="field">
+            <label>Nom d'usage</label>
+            <input id="sr-name" type="text" maxlength="80"
+                   placeholder="Ex. Mairie — Service Jeunesse"
+                   value="${F.esc(F.siteOverride(site))}">
+          </div>
+          <div class="sub" style="margin-top:8px">Laisser vide pour revenir au nom de la facture.</div>
+        </div>
+        <div class="palette-foot" style="justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" data-cancel>Annuler</button>
+          <button class="btn btn-sm btn-primary" id="sr-save">Enregistrer</button>
+        </div>
+      </div>`;
+    document.body.appendChild(box);
+    const close = () => box.remove();
+    box.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', close));
+    box.addEventListener('mousedown', e => { if (e.target === box) close(); });
+    document.addEventListener('keydown', function esc(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+    const input = box.querySelector('#sr-name');
+    const save = async () => {
+      const btn = box.querySelector('#sr-save');
+      btn.disabled = true; btn.textContent = 'Enregistrement…';
+      try {
+        await S.setSiteName(site.id, input.value);
+        close();
+        window.toast(input.value.trim()
+          ? `Site renommé : ${input.value.trim()}`
+          : 'Nom de la facture rétabli');
+        onSaved && onSaved();
+        window.App.fillEntity();
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Enregistrer';
+        window.toast(err.message, 'err');
+      }
+    };
+    box.querySelector('#sr-save').addEventListener('click', save);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+    setTimeout(() => input.focus(), 30);
+  }
+
+  /* Rappel des sites que la facture nomme de façon ambiguë. Tant qu'ils ne sont
+     pas renommés, une liste de migration ne dit pas de quel local elle parle. */
+  function ambiguousCard() {
+    const amb = S.ambiguousSites().filter(s =>
+      S.account === 'all' || s.account === S.account);
+    if (!amb.length) return '';
+    const groups = {};
+    amb.forEach(s => (groups[s.name] = groups[s.name] || []).push(s));
+    return `
+      <div class="card mb-2" style="border-color:#f3ddb0;background:linear-gradient(100deg,rgba(217,140,13,.06),#fff 45%)">
+        <div class="card-title">
+          <span style="color:#8a5a06">${Icons.svg('alert')} Sites à renommer</span>
+          <span class="hint">${amb.length} sous-comptes · ${Object.keys(groups).length} noms portés par plusieurs bâtiments</span>
+        </div>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Nom sur la facture</th><th>Sous-compte</th><th>Adresse</th><th></th></tr></thead>
+          <tbody>
+            ${Object.entries(groups).map(([name, ss]) => ss.map((s, i) => `
+              <tr>
+                <td>${i === 0 ? `<b>${F.esc(F.titleCase(name))}</b>
+                  <div class="sub">${ss.length} bâtiments</div>` : ''}</td>
+                <td class="mono sub">${F.esc(s.id)}</td>
+                <td>${F.esc(F.titleCase(s.address || ''))}</td>
+                <td style="width:120px"><button class="btn btn-ghost btn-sm"
+                  data-rename="${F.esc(s.id)}">${Icons.svg('edit')} Renommer</button></td>
+              </tr>`).join('')).join('')}
+          </tbody>
+        </table></div>
+        <div class="audit-note">
+          ${Icons.svg('info')}
+          <div>Le nom saisi ici ne remplace pas celui de la facture : il s'affiche à sa
+          place dans l'application, et le nom facturé reste visible en dessous pour
+          retrouver le sous-compte sur le PDF. Un site renommé sort de cette liste.</div>
+        </div>
+      </div>`;
   }
 
   /* Un même bâtiment porte souvent plusieurs sous-comptes facturés séparément :
@@ -80,7 +187,13 @@
       <div class="card" style="padding:16px 18px">
         <div class="flex-between" style="align-items:flex-start">
           <div style="min-width:0">
-            <div style="font-weight:650;font-size:14px;letter-spacing:-.01em">${F.esc(prettifySite(s))}</div>
+            <div style="font-weight:650;font-size:14px;letter-spacing:-.01em">
+              ${F.esc(prettifySite(s))}
+              <button class="icon-btn site-rename" data-rename="${F.esc(s.id)}"
+                title="Renommer ce site">${Icons.svg('edit')}</button>
+            </div>
+            ${F.siteRenamed(s) ? `<div class="sub text-muted" style="font-size:11px;margin-top:2px"
+              title="Nom porté par la facture">sur facture : ${F.esc(F.siteBilled(s))}</div>` : ''}
             <div class="sub text-muted" style="font-size:11.5px;margin-top:2px">${F.esc(F.titleCase(s.address || ''))}</div>
           </div>
           <span class="badge b-mut mono">${s.id}</span>
