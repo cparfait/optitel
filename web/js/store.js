@@ -136,6 +136,9 @@
     S.migration = j.sites || {};
     S.migrationLines = j.lines || {};
     S.siteNames = j.siteNames || {};
+    // Les noms d'usage entrent dans l'index de recherche : renommer un site
+    // doit le rendre trouvable sous son nouveau nom sans recharger la page.
+    S.invalidateIndex();
   }
 
   S.loadMigration = async function () {
@@ -592,11 +595,17 @@
 
   let _index = null;
 
+  S.invalidateIndex = function () { _index = null; };
+
   S.buildIndex = function () {
     const d = S.data;
     if (!d) return (_index = []);
     const idx = [];
     const push = (o) => { o.hay = norm(o.terms.filter(Boolean).join(' ')); idx.push(o); };
+
+    // Un site renommé doit se retrouver sous son nom d'usage comme sous celui
+    // de la facture : les deux sont indexés, aucun ne remplace l'autre.
+    const usage = id => (S.siteNames[id] || {}).name || '';
 
     d.lines.forEach(l => push({
       kind: 'line', id: l.key, icon: 'phone',
@@ -606,8 +615,8 @@
       obj: l,
       num: digits(l.number),
       terms: [l.number, l.key, l.familyLabel, l.label, l.siteName, l.siteDept,
-        l.siteId, l.siteAddress, l.account, l.attachedTo, l.siteInternet,
-        ...(l.products || []).map(p => p.name)],
+        usage(l.siteId), l.siteId, l.siteAddress, l.account, l.attachedTo,
+        l.siteInternet, ...(l.products || []).map(p => p.name)],
     }));
 
     d.sites.forEach(s => push({
@@ -617,7 +626,7 @@
       route: `#/sites?q=${encodeURIComponent(s.id)}`,
       obj: s,
       num: digits(s.id),
-      terms: [s.name, s.dept, s.address, s.id, s.entity, s.account],
+      terms: [usage(s.id), s.name, s.dept, s.address, s.id, s.entity, s.account],
     }));
 
     d.invoices.forEach(i => push({

@@ -95,8 +95,11 @@
           !(l.channels || []).length && !(l.sharedWith || []).length) return false;
       if (state.q) {
         const q = state.q.toLowerCase();
-        const hay = [l.number, l.siteName, l.siteDept, l.siteAddress, l.siteId,
-          l.familyLabel, l.attachedTo, l.siteInternet].join(' ').toLowerCase();
+        // nom d'usage inclus : chercher le nom qu'on a donné à un site doit
+        // ramener ses lignes, pas seulement le nom porté par la facture
+        const hay = [l.number, F.siteOverride(l), l.siteName, l.siteDept,
+          l.siteAddress, l.siteId, l.familyLabel, l.attachedTo,
+          l.siteInternet].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       const v = l.months[mk];

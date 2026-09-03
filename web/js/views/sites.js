@@ -16,8 +16,10 @@
     });
     if (state.q) {
       const q = state.q.toLowerCase();
-      sites = sites.filter(x => [x.s.name, x.s.dept, x.s.address, x.s.id, x.s.entity]
-        .join(' ').toLowerCase().includes(q));
+      // le nom d'usage est cherché au même titre que celui de la facture :
+      // un site renommé doit se retrouver sous le nom qu'on lui a donné
+      sites = sites.filter(x => [F.siteOverride(x.s), x.s.name, x.s.dept,
+        x.s.address, x.s.id, x.s.entity].join(' ').toLowerCase().includes(q));
     }
     sites.sort((a, b) => b.total - a.total);
     // le switch « Parc » peut retirer des sites : le dire évite de croire à une perte
