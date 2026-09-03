@@ -10,7 +10,10 @@
 
   // null = on prend les bornes de la période visible tant que l'utilisateur
   // n'a pas choisi ; un mois disparu du filtre ne doit pas rester collé.
-  const state = { from: null, to: null };
+  const state = { from: null, to: null, fams: new Set() };
+
+  const FAM_ORDER = ['t0', 't0_ascenseur', 'numeris', 'canal_sda', 'residentiel',
+    'internet', 'autre'];
 
   function bounds() {
     const ms = S.visibleMonths();
@@ -33,6 +36,25 @@
     gone.sort((x, y) => y.net - x.net);
     added.sort((x, y) => y.net - x.net);
     return { gone, added, kept };
+  }
+
+  /* Le filtre de type porte sur toute la comparaison — mouvements ET parc :
+     restreindre les seules listes laisserait les compteurs de parc annoncer un
+     effectif que le tableau en dessous ne montre pas. */
+  function famCounts(cmp) {
+    const counts = {};
+    [cmp.gone, cmp.added, cmp.kept].forEach(rows => rows.forEach(x => {
+      const f = x.line.family || 'autre';
+      const e = counts[f] || (counts[f] = { fam: f, label: x.line.familyLabel || f, n: 0 });
+      e.n += 1;
+    }));
+    return counts;
+  }
+
+  function restrict(cmp) {
+    if (!state.fams.size) return cmp;
+    const keep = rows => rows.filter(x => state.fams.has(x.line.family || 'autre'));
+    return { gone: keep(cmp.gone), added: keep(cmp.added), kept: keep(cmp.kept) };
   }
 
   function monthOptions(ms, sel) {
@@ -70,7 +92,19 @@
         ${Icons.svg('alert')}<div>Aucun mois facturé sur la période retenue.</div></div></div></div>`;
       return;
     }
-    const { gone, added, kept } = compare(from, to);
+    const all = compare(from, to);
+    const counts = famCounts(all);
+    // un type disparu de la comparaison ne doit pas rester coché en silence
+    state.fams.forEach(f => { if (!counts[f]) state.fams.delete(f); });
+    const { gone, added, kept } = restrict(all);
+    const total = Object.values(counts).reduce((a, e) => a + e.n, 0);
+    const famChips = FAM_ORDER.filter(f => counts[f])
+      .concat(Object.keys(counts).filter(f => !FAM_ORDER.includes(f)));
+    // les effectifs de parc suivent le filtre : le dire, sinon on croit lire
+    // le parc entier
+    const famNote = !state.fams.size ? ''
+      : state.fams.size === 1 ? ` · ${F.esc(counts[[...state.fams][0]].label)}`
+      : ` · ${state.fams.size} types`;
     const goneCost = gone.reduce((a, x) => a + x.net, 0);
     const addedCost = added.reduce((a, x) => a + x.net, 0);
     const nFrom = gone.length + kept.length;
@@ -86,15 +120,22 @@
             <div class="field"><label>Mois d'arrivée</label>
               <select id="mv-to">${monthOptions(ms, to)}</select></div>
             <div class="flex" style="gap:22px;margin-left:auto;align-items:flex-end">
-              <div><div class="kpi-label">Parc au départ</div>
+              <div><div class="kpi-label">Parc au départ${famNote}</div>
                 <div style="font-size:20px;font-weight:700">${F.num(nFrom)}</div></div>
-              <div><div class="kpi-label">Parc à l'arrivée</div>
+              <div><div class="kpi-label">Parc à l'arrivée${famNote}</div>
                 <div style="font-size:20px;font-weight:700">${F.num(nTo)}</div></div>
               <div><div class="kpi-label">Écart</div>
                 <div style="font-size:20px;font-weight:700;color:${nTo - nFrom <= 0 ? 'var(--green)' : 'var(--red)'}">
                   ${nTo - nFrom > 0 ? '+' : ''}${F.num(nTo - nFrom)}</div></div>
               <a class="btn btn-ghost btn-sm" id="mv-export">${Icons.svg('download')} Exporter</a>
             </div>
+          </div>
+          <div class="chip-row mt-2" id="mv-fams">
+            <span class="chip ${state.fams.size === 0 ? 'on' : ''}" data-fam=""
+              title="Lignes présentes à l'une des deux dates au moins"
+              >Tous les types <span class="cnt">${F.num(total)}</span></span>
+            ${famChips.map(f => `
+              <span class="chip ${state.fams.has(f) ? 'on' : ''}" data-fam="${f}">${F.esc(counts[f].label)} <span class="cnt">${F.num(counts[f].n)}</span></span>`).join('')}
           </div>
         </div>
 
@@ -143,9 +184,19 @@
     document.getElementById('mv-to').addEventListener('change', e => {
       state.to = e.target.value; rerender();
     });
+    document.querySelectorAll('#mv-fams .chip').forEach(ch => ch.addEventListener('click', () => {
+      const f = ch.dataset.fam;
+      if (!f) state.fams.clear();
+      else if (state.fams.has(f)) state.fams.delete(f);
+      else state.fams.add(f);
+      rerender();
+    }));
     document.getElementById('mv-export').addEventListener('click', () => {
+      // le CSV exporte ce que l'écran montre : un export plus large que le
+      // filtre affiché ne se relit pas
       const q = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-        + (S.account !== 'all' ? `&account=${encodeURIComponent(S.account)}` : '');
+        + (S.account !== 'all' ? `&account=${encodeURIComponent(S.account)}` : '')
+        + (state.fams.size ? `&family=${encodeURIComponent([...state.fams].join(','))}` : '');
       window.open('/api/export/mouvements' + q, '_blank');
     });
   }

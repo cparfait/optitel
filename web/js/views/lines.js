@@ -65,9 +65,21 @@
       return `<span class="badge b-mut">${Icons.svg('link')} ${F.esc(l.attachedTo)}</span>`;
     }
     if (l.family === 'numeris') {
-      const n = (l.channels || []).length || l.sdaCount;
-      return n ? `<span class="badge b-sda" title="Canaux et SDA portés par cet accès de base"
-        >${n} canal${n > 1 ? 'aux' : ''} / SDA</span>` : '<span class="text-muted">—</span>';
+      /* Canaux et SDA sont deux choses : les canaux sont des lignes d'annexe à
+         part entière (accès groupé), les SDA une quantité facturée sur l'accès
+         de base. On affichait `canaux || sdaCount`, si bien qu'un accès à
+         2 canaux et 10 SDA annonçait « 2 canaux / SDA » — les dix numéros
+         disparaissaient derrière le compteur de canaux. */
+      const ch = (l.channels || []).length;
+      const sda = l.sdaCount || 0;
+      const parts = [];
+      if (ch) parts.push(`<span class="badge b-sda" title="Canaux facturés comme lignes distinctes"
+        >${ch} canal${ch > 1 ? 'aux' : ''}</span>`);
+      if (sda) parts.push(`<span class="badge b-num" title="Abonnements SDA facturés en quantité sur cet accès de base"
+        >${sda} SDA</span>`);
+      return parts.length
+        ? `<span class="flex" style="gap:4px;flex-wrap:wrap">${parts.join('')}</span>`
+        : '<span class="text-muted">—</span>';
     }
     if (l.family === 'internet') {
       const n = (l.sharedWith || []).length;
@@ -143,6 +155,12 @@
     scope.forEach(l => { famCounts[l.family] = (famCounts[l.family] || 0) + 1; });
 
     const attachedCount = scope.filter(l => l.attachedTo).length;
+    // Lignes facturées ≠ numéros : les SDA d'un accès Numéris sont facturés en
+    // quantité sur la ligne de l'accès, jamais une par une. Le compteur seul
+    // annonçait donc un parc plus petit que le nombre de numéros en service.
+    const sdaRows = S.sdaTotal(rows);
+    const sdaHosts = S.linesWithSda(rows).length;
+    const sdaScope = S.sdaTotal(scope);
     const netTotal = rows.reduce((a, l) => a + l.totals.abo, 0);
     // le coût qui compte pour un arbitrage est celui encore facturé aujourd'hui
     const monthlyNow = rows.reduce((a, l) => a + (l.isActive ? l.lastNet : 0), 0);
@@ -187,15 +205,24 @@
             </div>
           </div>
           <div class="chip-row mt-2" id="fams">
-            <span class="chip ${state.fams.size === 0 ? 'on' : ''}" data-fam="">Tous <span class="cnt">${scope.length}</span></span>
-            ${FAM_ORDER.filter(f => famCounts[f]).map(f => `
-              <span class="chip ${state.fams.has(f) ? 'on' : ''}" data-fam="${f}">${FAM_LABELS[f]} <span class="cnt">${famCounts[f]}</span></span>`).join('')}
+            <span class="chip ${state.fams.size === 0 ? 'on' : ''}" data-fam=""
+              ${sdaScope ? `title="${scope.length} lignes facturées + ${sdaScope} SDA = ${scope.length + sdaScope} numéros"` : ''}
+              >Tous <span class="cnt">${scope.length}</span></span>
+            ${FAM_ORDER.filter(f => famCounts[f]).map(f => {
+              // le compteur d'un accès de base ne dit rien des numéros qu'il porte
+              const sda = f === 'numeris' ? S.sdaTotal(scope.filter(l => l.family === f)) : 0;
+              return `<span class="chip ${state.fams.has(f) ? 'on' : ''}" data-fam="${f}"
+                ${sda ? `title="${famCounts[f]} accès de base portant ${sda} SDA facturés en quantité"` : ''}
+                >${FAM_LABELS[f]} <span class="cnt">${famCounts[f]}${sda ? ` +${sda} SDA` : ''}</span></span>`;
+            }).join('')}
           </div>
         </div>
 
         <div class="card">
           <div class="card-title">
-            <span>${rows.length} ligne${rows.length > 1 ? 's' : ''} · ${LIFE_LABELS[state.life]}
+            <span>${rows.length} ligne${rows.length > 1 ? 's' : ''} facturée${rows.length > 1 ? 's' : ''}${
+              sdaRows ? ` <span class="badge b-num" title="Sélections directes à l'arrivée facturées en quantité sur ${sdaHosts} accès Numéris — elles n'apparaissent pas comme lignes d'annexe">+ ${F.num(sdaRows)} SDA</span> <span class="hint">soit ${F.num(rows.length + sdaRows)} numéros</span>` : ''
+              } · ${LIFE_LABELS[state.life]}
               · ${monthlyNow > 0 ? `${F.eur(monthlyNow)} / mois` : `${F.eur(netTotal)} cumulés`}</span>
             <span class="hint">cliquez une ligne pour le détail · ${attachedCount} canaux rattachés à un accès</span>
           </div>
@@ -292,7 +319,7 @@
     const parts = [];
     if (l.attachedTo) parts.push(chip(l.attachedTo, 'accès de base ' +
       (l.attachedKind === 'numeris_autre_site' ? '(autre sous-compte)' : 'du site')));
-    (l.channels || []).forEach(c => parts.push(chip(c, 'canal / SDA rattaché')));
+    (l.channels || []).forEach(c => parts.push(chip(c, 'canal rattaché')));
     if (l.siteInternet) parts.push(chip(l.siteInternet, 'accès internet ' +
       (l.siteInternetSameAccount ? 'du sous-compte' : 'du même bâtiment')));
     (l.sharedWith || []).slice(0, 12).forEach(c => parts.push(chip(c, 'ligne du même bâtiment')));

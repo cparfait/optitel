@@ -580,6 +580,24 @@
       .sort((a, b) => b.conso - a.conso);
   };
 
+  /* SDA portés par un ensemble de lignes.
+     Un accès Numéris ne fait pas facturer ses SDA une par une : l'annexe porte
+     « Abonnement SDA × 10 » sur la ligne de l'accès de base, et le parseur en
+     garde la quantité (`sdaCount`). Compter les lignes facturées revient donc à
+     annoncer un parc plus petit que le nombre de numéros en service — d'où la
+     distinction faite à l'écran entre lignes facturées et numéros.
+     Les canaux d'un accès groupé, eux, sont bien facturés ligne par ligne
+     (famille `canal_sda`) : ils sont déjà comptés comme lignes, les additionner
+     ici les compterait deux fois. */
+  S.sdaTotal = function (lines) {
+    return lines.reduce((a, l) => a + (l.sdaCount || 0), 0);
+  };
+
+  /* Lignes qui portent au moins un SDA — les accès de base concernés. */
+  S.linesWithSda = function (lines) {
+    return lines.filter(l => (l.sdaCount || 0) > 0);
+  };
+
   /* Coût mensuel d'un ensemble de lignes au mois affiché. */
   S.monthlyCost = function (lines, mk) {
     mk = mk || S.month;

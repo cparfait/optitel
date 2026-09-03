@@ -766,11 +766,16 @@ def export_mouvements():
     if frm > to:
         frm, to = to, frm
     account = request.args.get('account')
+    # familles retenues à l'écran : le CSV doit porter le même périmètre que la
+    # liste que l'utilisateur vient de filtrer
+    fams = {f for f in (request.args.get('family') or '').split(',') if f}
     noms = load_migration()['siteNames']
 
     rows = []
     for l in ds['lines']:
         if account and l['account'] != account:
+            continue
+        if fams and l.get('family') not in fams:
             continue
         a, b = l['months'].get(frm), l['months'].get(to)
         if bool(a) == bool(b):
