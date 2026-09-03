@@ -51,8 +51,11 @@
     const unappliedYear = unappliedTotal / Math.max(months.length, 1) * 12;
     const maxRem = Math.max(...rows.map(r => r.total), 1);
 
-    // simulateur : facture sans remises
-    const sansRem = brut;
+    // Simulateur : ce que la période aurait coûté sans remise, frais ponctuels
+    // compris — c'est la facture entière qu'on compare, pas ses seuls postes
+    // remisables. Le KPI annonçait le brut seul, soit 1 103,60 € de moins que
+    // la facture correspondante.
+    const sansRem = brut + T.ponctuels;
 
     // marchés par compte
     const marches = [];
@@ -74,7 +77,13 @@
             <div class="kpi-ico">${Icons.svg('euro')}</div>
             <div class="kpi-label">Taux de remise moyen</div>
             <div class="kpi-value">${F.pct(brut > 0 ? (totalRem / brut) * 100 : 0, 1)}</div>
-            <div class="kpi-delta">brut ${F.eur(brut, 0)} → net ${F.eur(T.ht, 0)}</div>
+            <!-- brut − remises ne fait pas le total HT : la facture porte aussi
+                 des frais ponctuels, qui ne sont ni remisés ni remisables.
+                 L'écran posait « brut → net HT » et l'écart, 1 103,60 €, restait
+                 sans explication. -->
+            <div class="kpi-delta">brut ${F.eur(brut, 0)} → ${F.eur(brut - totalRem, 0)} d'abonnements
+              et consommations${T.ponctuels > 0.005
+                ? ` <span title="Frais ponctuels facturés en plus : mises en service, interventions, matériel. Hors remise.">+ ${F.eur(T.ponctuels, 0)} de frais ponctuels</span>` : ''}</div>
           </div>
           <div class="kpi" style="--k-accent:#7059e8;--k-soft:var(--violet-soft)">
             <div class="kpi-ico">${Icons.svg('tag')}</div>
@@ -261,8 +270,16 @@
             isolément n'est donc pas comparable à son libellé — c'est le
             <b>cumul par offre</b> ci-dessus qui fait foi.</div>
           </div>
+          <!-- Ce tableau ne porte que les remises rattachées à une offre de
+               l'annexe, c'est-à-dire les remises d'abonnement. Il annonçait
+               « exactement la ligne remises de la facture » — 22 954,47 € contre
+               24 723,76 € au compteur du haut, l'écart étant les remises de
+               consommation, qui ne se rattachent à aucune offre. -->
           <div class="tbl-foot">Somme des remises d'abonnement : ${F.eur(rows.reduce((a, r) => a + r.total, 0))}
-            — soit exactement la ligne « remises » des ${months.length} mois de factures.</div>
+            — soit exactement la ligne « remises d'abonnement » des ${months.length} mois de factures.
+            ${T.remiseConso > 0.005 ? `S'y ajoutent ${F.eur(T.remiseConso)} de remises sur les
+              consommations, qui ne portent sur aucune offre de l'annexe : c'est la somme des deux
+              qui fait le total de ${F.eur(totalRem)} affiché en haut de page.` : ''}</div>
         </div>
 
         ${credits.length ? `

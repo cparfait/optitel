@@ -172,6 +172,12 @@
   function outlierCard(outliers) {
     if (!outliers.length) {
       const n = S.activeLines().length;
+      // Ces taux étaient écrits en dur dans le texte — « Ligne Fixe Simple à
+      // 50,5 % » quand les factures en donnaient 51,7 %. Un exemple chiffré doit
+      // se lire dans les données, sinon l'écran affirme des chiffres que sa
+      // propre page contredit.
+      const remisees = S.offerDiscounts()
+        .filter(o => o.taux >= S.SEUIL_NON_REMISEE).slice(0, 3);
       return `
         <div class="card mb-3">
           <div class="card-title">
@@ -180,8 +186,8 @@
           </div>
           <div class="empty">${Icons.svg('check-c')}
             <div><b>Aucune ligne sous-remisée par rapport à ses jumelles.</b><br>
-            Pour chaque offre, toutes les lignes reçoivent le même taux — Ligne Fixe Simple
-            à 50,5 % sur l'ensemble du parc, ligne ascenseur à 50,0 %, abonnement SDA à 62,4 %.
+            Pour chaque offre, toutes les lignes reçoivent le même taux${remisees.length
+              ? ` — ${remisees.map(o => `${F.esc(o.name)} à ${F.pct(o.taux, 1)}`).join(', ')}` : ''}.
             L'écart de remise ne vient donc pas de lignes oubliées, mais des
             <a href="#/remises">offres non remisées</a>.</div>
           </div>

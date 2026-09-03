@@ -51,9 +51,13 @@
     const copperCost = copper.reduce((a, l) => a + l.lastNet, 0);
     const copperVoice = copper.filter(l => l.family !== 'internet').length;
     const copperSites = new Set(copper.map(l => l.siteId)).size;
-    const cuStates = Object.values(S.migration || {});
-    const cuDone = cuStates.filter(x => x.state === 'migrated').length;
-    const cuProgress = copperSites ? Math.min((cuDone / copperSites) * 100, 100) : 0;
+    /* Avancement déclaré, compté en lignes comme sur l'écran « Fin du cuivre ».
+       Il se lisait ici dans le store de saisie brut — les sites déclarés migrés
+       rapportés aux sites cuivre — en ignorant les déclarations portées ligne à
+       ligne et en comptant des sites qui n'ont plus de cuivre. Deux pourcentages
+       différents pour le même chantier, selon l'écran ouvert. */
+    const cuDone = copper.filter(l => S.migrationOfLine(l).state === 'migrated').length;
+    const cuProgress = copper.length ? (cuDone / copper.length) * 100 : 0;
 
     // séries mensuelles
     const labels = months.map(F.monthLabelShort);
