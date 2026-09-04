@@ -106,8 +106,15 @@
       if (l.family === 'internet') s.internet = s.internet || l.number;
       s.maxEffort = Math.max(s.maxEffort, (MIGRATION[l.family] || {}).effort || 1);
     });
+    // Effectif réel du site, filtre de technologie compris : déclarer « tout le
+    // site » vaut pour toutes ses lignes, y compris celles que le filtre masque.
+    // Le formulaire doit annoncer ce qu'il va réellement engager.
+    const liveBySite = {};
+    S.copperLines().forEach(l => { liveBySite[l.siteId] = (liveBySite[l.siteId] || 0) + 1; });
+
     const sites = Object.values(bySite).sort((a, b) => b.cost - a.cost);
     sites.forEach(s => {
+      s.allLive = liveBySite[s.id] || 0;
       s.suivi = S.migrationOf(s.id);
       s.net = s.internet ? netByNumber[s.internet] : null;
       // les lignes encore en service d'abord, puis celles déjà retirées
@@ -323,20 +330,31 @@
     };
 
     /* Un accès xDSL s'appuie sur une paire de cuivre : les lignes voix du même
-       bâtiment sont les supports candidats. Sans trafic, elles partent avec lui. */
+       bâtiment sont les supports candidats. Sans trafic, elles partent avec lui.
+
+       Elles se déclarent ici comme partout : la migration se commande ligne par
+       ligne, et une ligne support n'était jusqu'ici affichée que pour mémoire —
+       avec un filtre de technologie sur l'accès internet, sa propre fiche de
+       site n'est même plus à l'écran et il n'y avait plus aucun endroit pour la
+       traiter. */
     const supportRows = (net) => {
       const supports = S.allLines().filter(v =>
         v.isActive && v.family !== 'internet' && v.placeKey && v.placeKey === net.placeKey);
       if (!supports.length) return '';
       return `<div class="cu-support">
         <div class="cu-support-head">${Icons.svg('link')} Ligne(s) support au même bâtiment</div>
-        ${supports.sort((a, b) => calls(b) - calls(a)).map(v => `
-          <div class="cu-line${calls(v) === 0 && !S.NO_TRAFFIC_BY_DESIGN.has(v.family) ? ' is-mute' : ''}">
+        ${supports.sort((a, b) => calls(b) - calls(a)).map(v => {
+          const st = S.migrationOfLine(v);
+          const cls = st.state === 'migrated' ? ' is-done' : st.state === 'kept' ? ' is-kept' : '';
+          const mute = calls(v) === 0 && !S.NO_TRAFFIC_BY_DESIGN.has(v.family);
+          return `<div class="cu-line${mute ? ' is-mute' : ''}${cls}">
             <span class="mono">${F.esc(v.number)}</span>
             <span class="sub">${F.esc(v.familyLabel)}${v.siteId !== net.siteId ? ` · sous-compte ${F.esc(v.siteId)}` : ''}</span>
             <span class="cu-line-conso">${trafficCell(v)}</span>
             <span class="cu-line-cost">${F.eur(v.lastNet)}</span>
-          </div>`).join('')}
+            ${lineState(v)}
+          </div>`;
+        }).join('')}
       </div>`;
     };
 
@@ -370,7 +388,9 @@
             ${s.goneCost ? `<div class="sub" title="Déjà sorti de la facture">${F.eur(s.goneCost)}/mois retirés</div>` : ''}</td>
           <td>
             ${s.liveLines.length
-              ? `<div class="strong">${s.doneLines}/${s.liveLines.length} migrée${s.liveLines.length > 1 ? 's' : ''}</div>`
+              ? `<div class="strong">${s.doneLines}/${s.liveLines.length} migrée${s.liveLines.length > 1 ? 's' : ''}</div>
+                 ${s.allLive > s.liveLines.length
+                   ? `<div class="sub" title="Le filtre de technologie masque des lignes de ce site — la déclaration « tout le site » les engage aussi">${s.allLive - s.liveLines.length} ligne(s) hors filtre</div>` : ''}`
               : '<div class="strong">plus de cuivre</div>'}
             ${stateBadge(s.suivi)}
             ${s.liveLines.length ? `<button class="btn btn-ghost btn-sm mt-1" data-edit="${F.esc(s.id)}"
@@ -384,7 +404,9 @@
         b.addEventListener('click', () => openEditor(bySite[b.dataset.edit], () => render(view))));
       document.querySelectorAll('[data-edit-line]').forEach(b =>
         b.addEventListener('click', () => {
-          const l = copper.find(x => x.key === b.dataset.editLine);
+          // les lignes support sortent du périmètre filtré : on les cherche dans
+          // le parc entier, sinon le bouton d'une ligne affichée ne répondait pas
+          const l = S.allLines().find(x => x.key === b.dataset.editLine);
           if (l) openLineEditor(l, () => render(view));
         }));
     };
@@ -437,13 +459,19 @@
      pas de déclaration propre. */
   function openEditor(site, onSaved) {
     if (!site) return;
+    // les lignes déjà retirées ne sont pas concernées par une déclaration
+    const shown = (site.liveLines || site.lines).length;
+    // un filtre de technologie peut masquer des lignes du site : la déclaration
+    // les engage quand même, autant l'écrire avant d'enregistrer
+    const total = site.allLive === undefined ? shown : site.allLive;
     openTracker({
       icon: 'swap',
       title: F.esc(F.site(site)),
-      // les lignes déjà retirées ne sont pas concernées par une déclaration
-      sub: `${F.esc(site.id)} · ${(site.liveLines || site.lines).length} ligne(s) cuivre en service · ${F.eur(site.cost)}/mois`,
+      sub: `${F.esc(site.id)} · ${total} ligne(s) cuivre en service${
+        total > shown ? ` (dont ${total - shown} hors filtre)` : ''} · ${F.eur(site.cost)}/mois`,
       current: site.suivi || S.migrationOf(site.id),
-      hint: 'Vaut pour toutes les lignes du site qui n\'ont pas de déclaration propre.',
+      hint: 'Vaut pour toutes les lignes du site qui n\'ont pas de déclaration propre'
+        + (total > shown ? ', y compris celles que le filtre de technologie masque.' : '.'),
       save: payload => S.setMigration(site.id, payload),
       saved: 'Suivi enregistré pour ' + F.site(site),
     }, onSaved);

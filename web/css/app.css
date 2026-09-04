@@ -908,6 +908,10 @@ tr.row-flag:hover { background: var(--red-soft); }
 .cu-support .cu-line-cost { flex: none; }
 .cu-support .cu-line .mono { white-space: nowrap; flex: none; }
 .cu-support .cu-line .sub { flex: 1; min-width: 0; }
+/* une ligne support se déclare comme les autres : le bloc de suivi garde sa
+   place au bout de la rangée, sans manger le libellé de la ligne */
+.cu-support .cu-line-state { flex: none; min-width: 96px; }
+.cu-support .cu-line-state .sub { flex: none; }
 
 /* ═══════════════════════════════════════════════════════════════
    Audit & économies
