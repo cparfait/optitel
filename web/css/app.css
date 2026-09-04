@@ -857,61 +857,47 @@ tr.row-flag:hover { background: var(--red-soft); }
 }
 .palette textarea:focus, .palette input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
-/* lignes cuivre détaillées dans le plan de migration */
-.cu-line {
-  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-  padding: 4px 0; border-bottom: 1px dashed var(--line);
-}
-.cu-line:last-child { border-bottom: 0; }
+/* Lignes cuivre du plan de migration : chacune est une rangée du tableau, sous
+   la rangée de son site. Coût, complexité et suivi tombent ainsi sous les
+   colonnes qui portent ces titres — empilées dans la cellule des lignes, le
+   crayon de saisie finissait renvoyé au milieu du libellé. */
+.cu-site td { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.cu-lrow td { border-top: 0; padding-top: 3px; padding-bottom: 3px; vertical-align: middle; }
+.cu-lrow .cu-line { padding: 0; }
+/* gouttière : la colonne du site reste vide en face des lignes, elle sert de
+   repère visuel de rattachement */
+.cu-lrow-gut { width: 1%; padding-left: 22px !important; color: var(--muted-2); }
+.cu-lrow-gut svg { width: 12px; height: 12px; display: block; }
+.cu-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .cu-line-conso { font-size: 11.5px; color: var(--muted); margin-left: auto; }
-.cu-line-cost { font-size: 12px; font-weight: 600; min-width: 62px; text-align: right; }
-.cu-line.is-mute .cu-line-conso { color: var(--amber); }
-.cu-line.is-mute .mono.strong { color: var(--muted); }
+.cu-lrow.is-mute .cu-line-conso { color: var(--amber); }
+.cu-lrow.is-mute .mono.strong { color: var(--muted); }
 
-/* Suivi porté par la ligne : statut + accès à la saisie, au bout de la ligne. */
-.cu-line-state {
-  display: inline-flex; align-items: center; gap: 5px;
-  min-width: 118px; justify-content: flex-end;
-}
+/* Suivi porté par la ligne : statut + accès à la saisie, dans la colonne Suivi
+   et aligné sous le bouton « Tout le site ». */
+.cu-line-state { display: inline-flex; align-items: center; gap: 5px; }
 .cu-line-state .sub { font-size: 10px; }
 .btn-xs {
   padding: 2px 5px; font-size: 11px; line-height: 1;
-  border-color: transparent; background: transparent; opacity: 0;
+  border-color: transparent; background: transparent; opacity: .5;
   transition: opacity .15s;
 }
 .btn-xs svg { width: 12px; height: 12px; }
-.cu-line:hover .btn-xs, .btn-xs:focus { opacity: .8; }
+.cu-lrow:hover .btn-xs, .btn-xs:focus { opacity: 1; }
 .btn-xs:hover { opacity: 1; border-color: var(--line-2); background: var(--card); }
 /* une ligne soldée s'efface visuellement sans disparaître */
-.cu-line.is-done { opacity: .58; }
-.cu-line.is-kept { opacity: .58; }
-.cu-line.is-done .mono.strong { text-decoration: line-through; }
+.cu-lrow.is-done td, .cu-lrow.is-kept td { opacity: .58; }
+.cu-lrow.is-done .mono.strong { text-decoration: line-through; }
 
 /* lignes support rattachées à un accès xDSL */
-.cu-support {
-  margin: 2px 0 6px 14px; padding: 6px 10px;
-  border-left: 2px solid var(--line-2); background: var(--bg);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-}
-.cu-support-head {
-  display: flex; align-items: center; gap: 6px;
+.cu-support-head td {
   font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--muted-2); margin-bottom: 2px;
+  text-transform: uppercase; color: var(--muted-2); padding-top: 6px;
 }
-.cu-support-head svg { width: 12px; height: 12px; }
-.cu-support .cu-line { border-bottom: 0; padding: 2px 0; }
-
-/* le bloc support est dense : on garde chaque ligne sur une seule rangée */
-.cu-support .cu-line { flex-wrap: nowrap; gap: 8px; }
-.cu-support .cu-line .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cu-support .cu-line-conso { white-space: nowrap; flex: none; }
-.cu-support .cu-line-cost { flex: none; }
-.cu-support .cu-line .mono { white-space: nowrap; flex: none; }
-.cu-support .cu-line .sub { flex: 1; min-width: 0; }
-/* une ligne support se déclare comme les autres : le bloc de suivi garde sa
-   place au bout de la rangée, sans manger le libellé de la ligne */
-.cu-support .cu-line-state { flex: none; min-width: 96px; }
-.cu-support .cu-line-state .sub { flex: none; }
+.cu-support-head svg {
+  width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px;
+}
+.cu-lrow.is-support td:nth-child(2) { padding-left: 14px; }
 
 /* ═══════════════════════════════════════════════════════════════
    Audit & économies
@@ -1030,7 +1016,7 @@ tr.row-flag:hover { background: var(--red-soft); }
 .tbl td .badge + .badge { margin-left: 3px; }
 
 /* Alternance très légère pour suivre une ligne du regard sur toute sa largeur */
-.tbl tbody tr:nth-child(even):not(.row-flag):not(.cu-row) { background: #fafbfc; }
+.tbl tbody tr:nth-child(even):not(.row-flag):not(.cu-row):not(.cu-lrow) { background: #fafbfc; }
 .tbl tbody tr.clickable { transition: background .12s; }
 .tbl tbody tr.clickable:hover { background: var(--accent-soft); }
 

@@ -301,38 +301,49 @@
       </span>`;
     };
 
-    const lineRow = (l) => {
-      const mute = !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && calls(l) === 0;
+    /* Une ligne cuivre est une rangée du tableau à part entière, sous la rangée
+       de son site. Son suivi tombe donc dans la colonne Suivi, juste sous le
+       bouton « Tout le site » : les deux façons de déclarer — le site d'un coup
+       ou ligne par ligne — se lisent au même endroit. Empilées dans la cellule
+       des lignes, le crayon de chaque ligne finissait renvoyé à la ligne
+       suivante, au milieu du libellé, et rien ne disait à quoi il se rapportait.
+       Sa complexité et son coût passent du même coup sous les colonnes qui
+       portent déjà ces titres. */
+    const lineRow = (l, opts = {}) => {
       const st = S.migrationOfLine(l);
-      const cls = st.state === 'migrated' ? ' is-done'
-        : st.state === 'kept' ? ' is-kept' : '';
+      const m = MIGRATION[l.family] || {};
+      const eff = m.effort || 1;
+      const mute = l.isActive && !S.NO_TRAFFIC_BY_DESIGN.has(l.family) && calls(l) === 0;
       /* Ligne déjà partie : elle est là pour mémoire, quand le switch « Parc »
          montre l'historique. Rien à déclarer, et son montant est celui qu'elle
-         coûtait — d'où le « /mois évités » plutôt qu'un coût courant. */
-      if (!l.isActive) {
-        return `<div class="cu-line is-done">
+         coûtait — d'où le « évités » plutôt qu'un coût courant. */
+      const cls = ['cu-lrow', opts.support ? 'is-support' : '', mute ? 'is-mute' : '',
+        !l.isActive ? 'is-done' : st.state === 'migrated' ? 'is-done'
+          : st.state === 'kept' ? 'is-kept' : ''].filter(Boolean).join(' ');
+      return `<tr class="${cls}">
+        <td class="cu-lrow-gut">${opts.support ? Icons.svg('link') : ''}</td>
+        <td><div class="cu-line">
           <span class="mono strong">${F.esc(l.number)}</span>
-          <span class="badge b-mut">${F.esc((MIGRATION[l.family] || {}).label || l.familyLabel)}</span>
+          <span class="badge b-mut">${F.esc(m.label || l.familyLabel)}</span>
           ${techBadge(l)}
-          <span class="cu-line-conso"><span class="badge b-ok">retirée ${F.monthLabelShort(l.endedAt)}</span>
-            ${l.closingCredit ? '<span class="sub">avoir de clôture</span>' : ''}</span>
-          <span class="cu-line-cost text-muted" title="Coût du dernier mois plein — déjà sorti de la facture">${F.eur(l.lastNet)} évités</span>
-        </div>`;
-      }
-      return `<div class="cu-line${mute ? ' is-mute' : ''}${cls}">
-        <span class="mono strong">${F.esc(l.number)}</span>
-        <span class="badge b-mut">${F.esc((MIGRATION[l.family] || {}).label || l.familyLabel)}</span>
-        ${techBadge(l)}
-        <span class="cu-line-conso">${trafficCell(l)}</span>
-        <span class="cu-line-cost">${F.eur(l.lastNet)}</span>
-        ${lineState(l)}
-      </div>${l.family === 'internet' ? supportRows(l) : ''}`;
+          ${opts.support && l.siteId !== opts.of.siteId
+            ? `<span class="sub">sous-compte ${F.esc(l.siteId)}</span>` : ''}
+          <span class="cu-line-conso">${l.isActive ? trafficCell(l)
+            : `<span class="badge b-ok">retirée ${F.monthLabelShort(l.endedAt)}</span>${
+              l.closingCredit ? ' <span class="sub">avoir de clôture</span>' : ''}`}</span>
+        </div></td>
+        <td>${l.isActive
+          ? `<span class="badge ${EFFORT_CLASS[eff]}">${EFFORT_LABEL[eff]}</span>` : ''}</td>
+        <td class="num">${F.eur(l.lastNet)}${l.isActive ? ''
+          : '<div class="sub" title="Coût du dernier mois plein — déjà sorti de la facture">évités</div>'}</td>
+        <td>${l.isActive ? lineState(l) : ''}</td>
+      </tr>${l.family === 'internet' && !opts.support ? supportRows(l) : ''}`;
     };
 
     /* Un accès xDSL s'appuie sur une paire de cuivre : les lignes voix du même
        bâtiment sont les supports candidats. Sans trafic, elles partent avec lui.
 
-       Elles se déclarent ici comme partout : la migration se commande ligne par
+       Elles se déclarent comme les autres : la migration se commande ligne par
        ligne, et une ligne support n'était jusqu'ici affichée que pour mémoire —
        avec un filtre de technologie sur l'accès internet, sa propre fiche de
        site n'est même plus à l'écran et il n'y avait plus aucun endroit pour la
@@ -341,21 +352,11 @@
       const supports = S.allLines().filter(v =>
         v.isActive && v.family !== 'internet' && v.placeKey && v.placeKey === net.placeKey);
       if (!supports.length) return '';
-      return `<div class="cu-support">
-        <div class="cu-support-head">${Icons.svg('link')} Ligne(s) support au même bâtiment</div>
-        ${supports.sort((a, b) => calls(b) - calls(a)).map(v => {
-          const st = S.migrationOfLine(v);
-          const cls = st.state === 'migrated' ? ' is-done' : st.state === 'kept' ? ' is-kept' : '';
-          const mute = calls(v) === 0 && !S.NO_TRAFFIC_BY_DESIGN.has(v.family);
-          return `<div class="cu-line${mute ? ' is-mute' : ''}${cls}">
-            <span class="mono">${F.esc(v.number)}</span>
-            <span class="sub">${F.esc(v.familyLabel)}${v.siteId !== net.siteId ? ` · sous-compte ${F.esc(v.siteId)}` : ''}</span>
-            <span class="cu-line-conso">${trafficCell(v)}</span>
-            <span class="cu-line-cost">${F.eur(v.lastNet)}</span>
-            ${lineState(v)}
-          </div>`;
-        }).join('')}
-      </div>`;
+      return `<tr class="cu-lrow cu-support-head"><td class="cu-lrow-gut"></td>
+          <td colspan="4">${Icons.svg('link')} Ligne(s) support au même bâtiment
+            que ${F.esc(net.number)}</td></tr>`
+        + supports.sort((a, b) => calls(b) - calls(a))
+          .map(v => lineRow(v, { support: true, of: net })).join('');
     };
 
     const stateBadge = (st) => {
@@ -376,13 +377,19 @@
       if (stateFilter) {
         list = list.filter(s => s.lineStates.some(x => x.state === stateFilter));
       }
-      document.getElementById('copper-body').innerHTML = list.map(s => `
-        <tr data-site="${F.esc(s.id)}" class="cu-row${s.openLines === 0 ? ' st-migrated' : ''}">
+      /* La rangée du site porte le total et l'action d'ensemble ; ses lignes
+         suivent, une par rangée, avec leur propre suivi dans la même colonne. */
+      const siteRow = (s) => `
+        <tr data-site="${F.esc(s.id)}" class="cu-row cu-site${s.openLines === 0 ? ' st-migrated' : ''}">
           <td><b>${F.esc(F.site(s))}</b>
             <div class="sub mono">${F.esc(s.id)}</div>
             ${F.siteRenamed(s) ? `<div class="sub" title="Nom porté par la facture">sur facture : ${F.esc(F.siteBilled(s))}</div>` : ''}
             <div class="sub">${F.esc(F.titleCase(s.address || ''))}</div></td>
-          <td>${s.lines.map(lineRow).join('')}</td>
+          <td class="sub">${s.liveLines.length
+              ? `${s.liveLines.length} ligne(s) cuivre en service`
+              : 'plus de ligne cuivre en service'}${
+            s.goneLines.length ? ` · ${s.goneLines.length} déjà retirée(s)` : ''}${
+            s.silent.length ? ` · ${s.silent.length} sans appel` : ''}</td>
           <td><span class="badge ${EFFORT_CLASS[s.maxEffort]}">${EFFORT_LABEL[s.maxEffort]}</span></td>
           <td class="num strong">${F.eur(s.cost)}<div class="sub">${F.eur(s.cost * 12)}/an</div>
             ${s.goneCost ? `<div class="sub" title="Déjà sorti de la facture">${F.eur(s.goneCost)}/mois retirés</div>` : ''}</td>
@@ -396,7 +403,10 @@
             ${s.liveLines.length ? `<button class="btn btn-ghost btn-sm mt-1" data-edit="${F.esc(s.id)}"
               title="Déclarer d'un coup toutes les lignes de ce site">
               ${Icons.svg('edit')} ${s.suivi.state === 'todo' && !s.suivi.ref ? 'Tout le site' : 'Modifier le site'}</button>` : ''}</td>
-        </tr>`).join('') ||
+        </tr>`;
+
+      document.getElementById('copper-body').innerHTML =
+        list.map(s => siteRow(s) + s.lines.map(l => lineRow(l)).join('')).join('') ||
         `<tr><td colspan="5"><div class="empty">${Icons.svg('check-c')}<div>Aucun site dans cette catégorie.</div></div></td></tr>`;
       document.querySelectorAll('[data-copper-tab]').forEach(c =>
         c.classList.toggle('on', c.dataset.copperTab === tab));
