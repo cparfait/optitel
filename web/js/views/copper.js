@@ -28,6 +28,12 @@
   const EFFORT_LABEL = { 1: 'Simple', 2: 'Encadré', 3: 'Complexe' };
   const EFFORT_CLASS = { 1: 'b-ok', 2: 'b-asc', 3: 'b-num' };
 
+  /* Types retenus à l'écran, choisis en cliquant le tableau « Par technologie ».
+     Vide = tout le parc cuivre. Comme sur les mouvements du parc, le filtre porte
+     sur toute la page — KPI, avancement, trajectoire et plan par site — sinon on
+     lirait des compteurs qui ne parlent pas du tableau d'en dessous. */
+  const state = { fams: new Set() };
+
   function render(view) {
     const months = S.visibleMonths();
     /* Le switch « Parc » vaut ici comme partout : « Actifs » montre ce qui reste
@@ -36,12 +42,35 @@
        chiffres : une ligne partie ne coûte plus rien et n'a plus à être migrée,
        les compteurs de coût et d'avancement restent donc sur le parc en service
        et le disent. */
-    const live = S.copperLines();
+    const scope = S.copperScope();
+
+    /* Répartition par technologie : effectif du parc retenu, coût de ce qui est
+       encore facturé. Comptée avant le filtre de type — le tableau reste le
+       tableau de bord complet, c'est lui qui sert à choisir. */
+    const byFam = {};
+    scope.forEach(l => {
+      const e = byFam[l.family] || (byFam[l.family] = {
+        n: 0, gone: 0, cost: 0,
+        label: (MIGRATION[l.family] || {}).label || l.familyLabel,
+      });
+      e.n += 1;
+      if (l.isActive) e.cost += l.lastNet; else e.gone += 1;
+    });
+    // un type sorti du périmètre (changement de mois ou de compte) ne doit pas
+    // rester coché en silence et vider la page
+    state.fams.forEach(f => { if (!byFam[f]) state.fams.delete(f); });
+    const kept = l => !state.fams.size || state.fams.has(l.family);
+    // ce que le filtre restreint, dit à côté des libellés qui compteraient sinon
+    // pour le parc entier
+    const famNote = !state.fams.size ? ''
+      : state.fams.size === 1 ? ` · ${byFam[[...state.fams][0]].label}`
+      : ` · ${state.fams.size} technologies`;
+
+    const live = S.copperLines().filter(kept);
     const everCopper = S.allLines().filter(l =>
-      l.isCopper && months.some(m => l.months[m]));
-    const copper = S.copperScope();
+      l.isCopper && kept(l) && months.some(m => l.months[m]));
+    const copper = scope.filter(kept);
     const gone = copper.filter(l => !l.isActive);
-    const active = S.activeLines();
     // Trafic sur les mois visibles. Le plan disait « aucun appel sur la période »
     // en lisant les totaux du parseur, qui portent sur tout l'historique : trois
     // lignes échappaient au constat et le KPI annonçait 27 lignes muettes
@@ -117,15 +146,6 @@
     // un site est traité quand toutes ses lignes le sont
     const done = sites.filter(s => s.openLines === 0);
 
-    // répartition par technologie : effectif du parc retenu, coût de ce qui est
-    // encore facturé
-    const byFam = {};
-    copper.forEach(l => {
-      const e = byFam[l.family] || (byFam[l.family] = { n: 0, gone: 0, cost: 0 });
-      e.n += 1;
-      if (l.isActive) e.cost += l.lastNet; else e.gone += 1;
-    });
-
     // Trajectoire : c'est une histoire, pas un état. Elle doit compter les lignes
     // facturées chaque mois, y compris celles depuis résiliées — sinon la courbe
     // est plate et le chantier paraît à l'arrêt.
@@ -136,26 +156,26 @@
     view.innerHTML = `
       <div class="wrap">
         <div class="kpi-row mb-3">
-          ${kpi(S.activeOnly ? 'Lignes cuivre en service' : 'Lignes cuivre vues sur la période',
+          ${kpi((S.activeOnly ? 'Lignes cuivre en service' : 'Lignes cuivre vues sur la période') + famNote,
             F.num(copper.length),
             S.activeOnly
               ? `<span>${F.num(copper.filter(l => l.family !== 'internet').length)} voix RTC · ${F.num(copper.filter(l => l.family === 'internet').length)} accès xDSL</span>`
               : `<span>${F.num(live.length)} encore en service · ${F.num(gone.length)} déjà retirée(s)</span>`,
             'phone', 'var(--accent)', 'var(--accent-soft)')}
-          ${kpi(S.activeOnly ? 'Coût du parc cuivre' : 'Coût du cuivre encore en service',
+          ${kpi((S.activeOnly ? 'Coût du parc cuivre' : 'Coût du cuivre encore en service') + famNote,
             F.eur(monthlyCost, 0) + ' <span style="font-size:13px;font-weight:500">/mois</span>',
             `<span>${F.eur(monthlyCost * 12, 0)} par an</span>`,
             'euro', 'var(--blue)', 'var(--blue-soft)')}
           ${!S.activeOnly ? kpi('Cuivre déjà retiré', F.num(gone.length),
             `<span class="up">${F.eur(goneCost)} /mois de moins · ${F.eur(goneCost * 12, 0)}/an</span>`,
             'phone-off', 'var(--green)', 'var(--green-soft)') : ''}
-          ${kpi('Sites à traiter', F.num(sites.filter(s => s.liveLines.length).length),
+          ${kpi('Sites à traiter' + famNote, F.num(sites.filter(s => s.liveLines.length).length),
             `<span>${F.num(live.length)} ligne(s) réparties</span>`,
             'building', 'var(--violet)', 'var(--violet-soft)')}
-          ${kpi('Lignes sans aucun appel', F.num(silentLines),
+          ${kpi('Lignes sans aucun appel' + famNote, F.num(silentLines),
             `<span class="up">${F.eur(silentCost)} /mois · à résilier plutôt qu'à migrer</span>`,
             'phone-off', 'var(--teal)', 'var(--teal-soft)')}
-          ${kpi('Migration déclarée', F.pct(progress),
+          ${kpi('Migration déclarée' + famNote, F.pct(progress),
             `<span>${doneLines.length}/${live.length} lignes en service · ${engagedLines.length} en cours · ${done.length}/${sites.length} sites soldés</span>`,
             'check-c', 'var(--green)', 'var(--green-soft)')}
         </div>
@@ -187,13 +207,20 @@
             <div id="ch-copper"></div>
           </div>
           <div class="card">
-            <div class="card-title">Par technologie <span class="hint">et cible de migration</span></div>
+            <div class="card-title">Par technologie
+              <span class="hint">${state.fams.size
+                ? `écran filtré · <a href="#" id="cu-fam-all">tout revoir</a>`
+                : 'cliquer une technologie pour n\'afficher qu\'elle'}</span></div>
             <div class="tbl-wrap"><table class="tbl">
               <thead><tr><th>Technologie</th><th>Cible</th><th class="num">Lignes</th><th class="num">€/mois</th></tr></thead>
-              <tbody>
+              <tbody id="cu-fam-body">
                 ${Object.entries(byFam).sort((a, b) => b[1].cost - a[1].cost).map(([f, e]) => {
-                  const m = MIGRATION[f] || { label: f, target: '—', effort: 1 };
-                  return `<tr title="${F.esc(m.note || '')}">
+                  const m = MIGRATION[f] || { label: e.label, target: '—', effort: 1 };
+                  const on = state.fams.has(f);
+                  return `<tr class="clickable${on ? ' row-on' : ''}" data-fam="${F.esc(f)}"
+                    title="${F.esc(m.note || '')}${m.note ? '\n' : ''}${on
+                      ? 'Cliquer pour retirer cette technologie du filtre'
+                      : 'Cliquer pour filtrer tout l\'écran sur cette technologie'}">
                     <td><span class="badge ${EFFORT_CLASS[m.effort]}">${EFFORT_LABEL[m.effort]}</span>
                       <div style="margin-top:3px">${F.esc(m.label)}</div></td>
                     <td class="sub">${F.esc(m.target)}</td>
@@ -217,7 +244,9 @@
               <option value="">Tous les statuts</option>
               ${S.MIGRATION_STATES.map(s => `<option value="${s.id}">${s.label}</option>`).join('')}
             </select>
-            <a class="btn btn-ghost btn-sm" href="/api/export/migration">${Icons.svg('download')} Exporter le plan</a>
+            <a class="btn btn-ghost btn-sm" href="/api/export/migration${state.fams.size
+              ? '?family=' + encodeURIComponent([...state.fams].join(',')) : ''}"
+              >${Icons.svg('download')} Exporter le plan${state.fams.size ? ' filtré' : ''}</a>
           </div>
           <div class="tbl-wrap"><table class="tbl" id="copper-tbl">
             <thead><tr>
@@ -364,6 +393,18 @@
       c.addEventListener('click', () => { tab = c.dataset.copperTab; paint(); }));
     document.getElementById('cu-state-filter').addEventListener('change', e => {
       stateFilter = e.target.value; paint();
+    });
+    // le filtre de type change tous les chiffres de l'écran : on repasse par un
+    // rendu complet, comme sur les mouvements du parc
+    document.querySelectorAll('#cu-fam-body [data-fam]').forEach(tr =>
+      tr.addEventListener('click', () => {
+        const f = tr.dataset.fam;
+        if (state.fams.has(f)) state.fams.delete(f); else state.fams.add(f);
+        render(view);
+      }));
+    const all = document.getElementById('cu-fam-all');
+    if (all) all.addEventListener('click', e => {
+      e.preventDefault(); state.fams.clear(); render(view);
     });
   }
 

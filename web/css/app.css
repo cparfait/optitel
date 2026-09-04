@@ -1030,6 +1030,15 @@ tr.row-flag:hover { background: var(--red-soft); }
 .tbl tbody tr.clickable { transition: background .12s; }
 .tbl tbody tr.clickable:hover { background: var(--accent-soft); }
 
+/* Ligne de tableau qui sert de filtre : la sélection doit se voir d'un coup
+   d'œil, sinon on lit des chiffres restreints en croyant lire le parc entier. */
+.tbl tbody tr.row-on,
+.tbl tbody tr.row-on:nth-child(even),
+.tbl tbody tr.row-on:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 /* Chiffres alignés sur la virgule : indispensable pour comparer des montants */
 .tbl td.num, .tbl th.num, .kpi-value, .hbar-val, .gauge-val {
   font-variant-numeric: tabular-nums;

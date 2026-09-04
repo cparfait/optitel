@@ -834,8 +834,13 @@ def export_migration():
             last_by_account[i['compte']] = i['month']
     labels = {'todo': 'à traiter', 'study': 'étude', 'ordered': 'commandé',
               'migrated': 'migré', 'kept': 'conservé'}
+    # technologies retenues à l'écran : le CSV doit porter le même périmètre que
+    # le plan que l'utilisateur vient de filtrer
+    fams = {f for f in (request.args.get('family') or '').split(',') if f}
     rows = []
     for l in ds['lines']:
+        if fams and l.get('family') not in fams:
+            continue
         ref_month = last_by_account.get(l['account'])
         cur = l['months'].get(ref_month)
         # une ligne dont la dernière facture n'est qu'un avoir de clôture est
