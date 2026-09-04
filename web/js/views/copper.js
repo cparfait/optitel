@@ -256,6 +256,13 @@
               >${Icons.svg('download')} Exporter le plan${state.fams.size ? ' filtré' : ''}</a>
           </div>
           <div class="tbl-wrap"><table class="tbl" id="copper-tbl">
+            <!-- Largeurs fixées : depuis que chaque ligne a sa rangée, la colonne
+                 des lignes n'a plus besoin de toute la place, et les noms de site
+                 comme leurs adresses tombaient sur trois rangs. -->
+            <colgroup>
+              <col class="cu-c-site"><col><col class="cu-c-eff">
+              <col class="cu-c-cost"><col class="cu-c-suivi">
+            </colgroup>
             <thead><tr>
               <th>Site</th><th>Lignes cuivre &amp; consommation</th>
               <th>Complexité</th><th class="num">€/mois</th><th>Suivi</th>

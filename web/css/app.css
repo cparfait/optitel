@@ -861,13 +861,22 @@ tr.row-flag:hover { background: var(--red-soft); }
    la rangée de son site. Coût, complexité et suivi tombent ainsi sous les
    colonnes qui portent ces titres — empilées dans la cellule des lignes, le
    crayon de saisie finissait renvoyé au milieu du libellé. */
+/* les colonnes de droite sont fixes : sous 1 040 px le tableau défile plutôt
+   que d'écraser la colonne des lignes */
+#copper-tbl { table-layout: fixed; min-width: 1040px; }
+.cu-c-site { width: 250px; }
+.cu-c-eff { width: 118px; }
+.cu-c-cost { width: 120px; }
+.cu-c-suivi { width: 240px; }
+/* un nom de site tient sur une ou deux lignes, pas sur trois mots empilés */
+.cu-site td:first-child { word-break: normal; overflow-wrap: break-word; }
 .cu-site td { border-top: 1px solid var(--line-2); padding-top: 12px; }
 .cu-lrow td { border-top: 0; padding-top: 3px; padding-bottom: 3px; vertical-align: middle; }
 .cu-lrow .cu-line { padding: 0; }
 /* gouttière : la colonne du site reste vide en face des lignes, elle sert de
    repère visuel de rattachement */
-.cu-lrow-gut { width: 1%; padding-left: 22px !important; color: var(--muted-2); }
-.cu-lrow-gut svg { width: 12px; height: 12px; display: block; }
+.cu-lrow-gut { padding-left: 22px !important; text-align: right; color: var(--muted-2); }
+.cu-lrow-gut svg { width: 12px; height: 12px; vertical-align: -2px; }
 .cu-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .cu-line-conso { font-size: 11.5px; color: var(--muted); margin-left: auto; }
 .cu-lrow.is-mute .cu-line-conso { color: var(--amber); }
